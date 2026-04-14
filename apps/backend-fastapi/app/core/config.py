@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         alias="APP_ACCESS_TOKEN_EXPIRE_MINUTES",
     )
     app_log_level: str = Field(default="INFO", alias="APP_LOG_LEVEL")
+    app_database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/guard_silver",
+        alias="APP_DATABASE_URL",
+    )
 
 
 @lru_cache

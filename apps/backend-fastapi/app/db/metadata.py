@@ -1,0 +1,35 @@
+from app.db.base import Base
+from app.models import (
+    CallRecognitionRecord,
+    EducationContent,
+    ElderFamilyBinding,
+    NotificationRecord,
+    PromptTemplate,
+    RiskAlert,
+    RiskLexiconTerm,
+    RiskRule,
+    Role,
+    SmsRecognitionRecord,
+    User,
+    UserRoleLink,
+    Workorder,
+    WorkorderAction,
+)
+
+__all__ = [
+    "Base",
+    "CallRecognitionRecord",
+    "EducationContent",
+    "ElderFamilyBinding",
+    "NotificationRecord",
+    "PromptTemplate",
+    "RiskAlert",
+    "RiskLexiconTerm",
+    "RiskRule",
+    "Role",
+    "SmsRecognitionRecord",
+    "User",
+    "UserRoleLink",
+    "Workorder",
+    "WorkorderAction",
+]

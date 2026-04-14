@@ -7,6 +7,7 @@
 - 请求日志、中间件、健康检查
 - JWT 鉴权与角色权限依赖
 - OpenAPI 文档与接口目录草案
+- SQLAlchemy 数据模型与 Alembic 迁移底座
 
 ## 快速启动
 
@@ -42,12 +43,23 @@ apps/backend-fastapi
 │   ├── api
 │   ├── constants
 │   ├── core
+│   ├── db
+│   ├── models
 │   ├── schemas
 │   └── services
+├── alembic
 ├── docs
 ├── .env.example
+├── alembic.ini
 └── pyproject.toml
 ```
 
-后续 3.3、3.4 会在此目录继续补充数据库模型、迁移和真实业务接口。
+## 数据库迁移
 
+```bash
+cd apps/backend-fastapi
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/alembic upgrade head
+```
+
+默认通过 `APP_DATABASE_URL` 连接 PostgreSQL。首版已补齐 3.3 所需核心表结构，详见 [docs/database-design.md](/workspaces/vue-vben-admin/apps/backend-fastapi/docs/database-design.md)。
