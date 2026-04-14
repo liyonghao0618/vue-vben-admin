@@ -49,9 +49,10 @@ function setupAccessGuard(router: Router) {
     const accessStore = useAccessStore();
     const userStore = useUserStore();
     const authStore = useAuthStore();
+    const isFallbackRoute = to.name === 'FallbackNotFound';
 
     // 基本路由，这些路由不需要进入权限拦截
-    if (coreRouteNames.includes(to.name as string)) {
+    if (coreRouteNames.includes(to.name as string) && !isFallbackRoute) {
       if (to.path === LOGIN_PATH && accessStore.accessToken) {
         return decodeURIComponent(
           (to.query?.redirect as string) ||
@@ -112,8 +113,10 @@ function setupAccessGuard(router: Router) {
         ? userInfo.homePath || preferences.app.defaultHomePath
         : to.fullPath)) as string;
 
+    // 首次直接访问动态业务页时，to 可能先被兜底 404 匹配。
+    // 这里在动态路由注入后显式按 path 再跳一次，确保重新命中真实业务路由。
     return {
-      ...router.resolve(decodeURIComponent(redirectPath)),
+      path: decodeURIComponent(redirectPath),
       replace: true,
     };
   });

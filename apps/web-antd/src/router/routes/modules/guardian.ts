@@ -1,84 +1,11 @@
-export interface UserInfo {
-  id: number;
-  password: string;
-  realName: string;
-  roles: string[];
-  username: string;
-  homePath?: string;
-}
+import type { RouteRecordRaw } from 'vue-router';
 
-export interface TimezoneOption {
-  offset: number;
-  timezone: string;
-}
-
-export const TIME_ZONE_OPTIONS: TimezoneOption[] = [
-  { offset: 8, timezone: 'Asia/Shanghai' },
-  { offset: 0, timezone: 'Etc/UTC' },
-  { offset: -5, timezone: 'America/New_York' },
-  { offset: 1, timezone: 'Europe/Berlin' },
-];
-
-export const MOCK_USERS: UserInfo[] = [
-  {
-    id: 1,
-    password: '123456',
-    realName: '王阿姨',
-    roles: ['elder'],
-    username: 'elder',
-    homePath: '/elder/home',
-  },
-  {
-    id: 2,
-    password: '123456',
-    realName: '李晓华',
-    roles: ['family'],
-    username: 'family',
-    homePath: '/family/overview',
-  },
-  {
-    id: 3,
-    password: '123456',
-    realName: '张海宁',
-    roles: ['community'],
-    username: 'community',
-    homePath: '/community/dashboard',
-  },
-  {
-    id: 4,
-    password: '123456',
-    realName: '系统管理员',
-    roles: ['admin'],
-    username: 'admin',
-    homePath: '/admin/users',
-  },
-];
-
-export const MOCK_CODES = [
-  {
-    codes: ['risk:view', 'alert:help', 'family:bind'],
-    username: 'elder',
-  },
-  {
-    codes: ['family:overview', 'family:notify', 'family:feedback'],
-    username: 'family',
-  },
-  {
-    codes: ['community:dashboard', 'community:workorder', 'community:report'],
-    username: 'community',
-  },
-  {
-    codes: ['system:user', 'system:role', 'system:rule', 'system:content'],
-    username: 'admin',
-  },
-];
-
-const elderMenus = [
+const routes: RouteRecordRaw[] = [
   {
     meta: {
       icon: 'lucide:heart-handshake',
-      order: 1,
       title: '老年端',
+      authority: ['elder'],
     },
     name: 'ElderPortal',
     path: '/elder',
@@ -87,9 +14,10 @@ const elderMenus = [
       {
         name: 'ElderHome',
         path: '/elder/home',
-        component: '/guardian-shield/elder/home/index',
+        component: () => import('#/views/guardian-shield/elder/home/index.vue'),
         meta: {
           affixTab: true,
+          authority: ['elder'],
           icon: 'lucide:house',
           title: '首页',
         },
@@ -97,8 +25,10 @@ const elderMenus = [
       {
         name: 'ElderAlerts',
         path: '/elder/alerts',
-        component: '/guardian-shield/elder/alerts/index',
+        component: () =>
+          import('#/views/guardian-shield/elder/alerts/index.vue'),
         meta: {
+          authority: ['elder'],
           icon: 'lucide:shield-alert',
           title: '风险提醒',
         },
@@ -106,8 +36,9 @@ const elderMenus = [
       {
         name: 'ElderHelp',
         path: '/elder/help',
-        component: '/guardian-shield/elder/help/index',
+        component: () => import('#/views/guardian-shield/elder/help/index.vue'),
         meta: {
+          authority: ['elder'],
           icon: 'lucide:siren',
           title: '一键求助',
         },
@@ -115,8 +46,10 @@ const elderMenus = [
       {
         name: 'ElderFamilyBinding',
         path: '/elder/family-binding',
-        component: '/guardian-shield/elder/family-binding/index',
+        component: () =>
+          import('#/views/guardian-shield/elder/family-binding/index.vue'),
         meta: {
+          authority: ['elder'],
           icon: 'lucide:users',
           title: '亲属绑定',
         },
@@ -124,8 +57,10 @@ const elderMenus = [
       {
         name: 'ElderKnowledge',
         path: '/elder/knowledge',
-        component: '/guardian-shield/elder/knowledge/index',
+        component: () =>
+          import('#/views/guardian-shield/elder/knowledge/index.vue'),
         meta: {
+          authority: ['elder'],
           icon: 'lucide:book-open',
           title: '防骗知识',
         },
@@ -133,22 +68,21 @@ const elderMenus = [
       {
         name: 'ElderSettings',
         path: '/elder/settings',
-        component: '/guardian-shield/elder/settings/index',
+        component: () =>
+          import('#/views/guardian-shield/elder/settings/index.vue'),
         meta: {
+          authority: ['elder'],
           icon: 'lucide:settings',
           title: '适老设置',
         },
       },
     ],
   },
-];
-
-const familyMenus = [
   {
     meta: {
       icon: 'lucide:bell-ring',
-      order: 1,
       title: '子女端',
+      authority: ['family'],
     },
     name: 'FamilyPortal',
     path: '/family',
@@ -157,9 +91,11 @@ const familyMenus = [
       {
         name: 'FamilyOverview',
         path: '/family/overview',
-        component: '/guardian-shield/family/overview/index',
+        component: () =>
+          import('#/views/guardian-shield/family/overview/index.vue'),
         meta: {
           affixTab: true,
+          authority: ['family'],
           icon: 'lucide:layout-dashboard',
           title: '监护总览',
         },
@@ -167,8 +103,10 @@ const familyMenus = [
       {
         name: 'FamilySeniors',
         path: '/family/seniors',
-        component: '/guardian-shield/family/seniors/index',
+        component: () =>
+          import('#/views/guardian-shield/family/seniors/index.vue'),
         meta: {
+          authority: ['family'],
           icon: 'lucide:users-round',
           title: '老人列表',
         },
@@ -176,8 +114,10 @@ const familyMenus = [
       {
         name: 'FamilyAlerts',
         path: '/family/alerts',
-        component: '/guardian-shield/family/alerts/index',
+        component: () =>
+          import('#/views/guardian-shield/family/alerts/index.vue'),
         meta: {
+          authority: ['family'],
           icon: 'lucide:shield-alert',
           title: '风险详情',
         },
@@ -185,8 +125,10 @@ const familyMenus = [
       {
         name: 'FamilyNotifications',
         path: '/family/notifications',
-        component: '/guardian-shield/family/notifications/index',
+        component: () =>
+          import('#/views/guardian-shield/family/notifications/index.vue'),
         meta: {
+          authority: ['family'],
           icon: 'lucide:mail-warning',
           title: '通知记录',
         },
@@ -194,22 +136,21 @@ const familyMenus = [
       {
         name: 'FamilySettings',
         path: '/family/settings',
-        component: '/guardian-shield/family/settings/index',
+        component: () =>
+          import('#/views/guardian-shield/family/settings/index.vue'),
         meta: {
+          authority: ['family'],
           icon: 'lucide:sliders-horizontal',
           title: '监护设置',
         },
       },
     ],
   },
-];
-
-const communityMenus = [
   {
     meta: {
       icon: 'lucide:building-2',
-      order: 1,
       title: '社区端',
+      authority: ['community'],
     },
     name: 'CommunityPortal',
     path: '/community',
@@ -218,9 +159,11 @@ const communityMenus = [
       {
         name: 'CommunityDashboard',
         path: '/community/dashboard',
-        component: '/guardian-shield/community/dashboard/index',
+        component: () =>
+          import('#/views/guardian-shield/community/dashboard/index.vue'),
         meta: {
           affixTab: true,
+          authority: ['community'],
           icon: 'lucide:chart-column-big',
           title: '辖区总览',
         },
@@ -228,8 +171,10 @@ const communityMenus = [
       {
         name: 'CommunitySeniors',
         path: '/community/seniors',
-        component: '/guardian-shield/community/seniors/index',
+        component: () =>
+          import('#/views/guardian-shield/community/seniors/index.vue'),
         meta: {
+          authority: ['community'],
           icon: 'lucide:user-round-search',
           title: '重点老人',
         },
@@ -237,8 +182,10 @@ const communityMenus = [
       {
         name: 'CommunityWorkorders',
         path: '/community/workorders',
-        component: '/guardian-shield/community/workorders/index',
+        component: () =>
+          import('#/views/guardian-shield/community/workorders/index.vue'),
         meta: {
+          authority: ['community'],
           icon: 'lucide:files',
           title: '风险工单',
         },
@@ -246,8 +193,10 @@ const communityMenus = [
       {
         name: 'CommunityEducation',
         path: '/community/education',
-        component: '/guardian-shield/community/education/index',
+        component: () =>
+          import('#/views/guardian-shield/community/education/index.vue'),
         meta: {
+          authority: ['community'],
           icon: 'lucide:megaphone',
           title: '宣教管理',
         },
@@ -255,22 +204,21 @@ const communityMenus = [
       {
         name: 'CommunityReports',
         path: '/community/reports',
-        component: '/guardian-shield/community/reports/index',
+        component: () =>
+          import('#/views/guardian-shield/community/reports/index.vue'),
         meta: {
+          authority: ['community'],
           icon: 'lucide:file-bar-chart',
           title: '统计报表',
         },
       },
     ],
   },
-];
-
-const adminMenus = [
   {
     meta: {
       icon: 'lucide:shield-check',
-      order: 1,
       title: '管理后台',
+      authority: ['admin'],
     },
     name: 'AdminPortal',
     path: '/admin',
@@ -279,9 +227,11 @@ const adminMenus = [
       {
         name: 'AdminUsers',
         path: '/admin/users',
-        component: '/guardian-shield/admin/users/index',
+        component: () =>
+          import('#/views/guardian-shield/admin/users/index.vue'),
         meta: {
           affixTab: true,
+          authority: ['admin'],
           icon: 'lucide:users',
           title: '用户管理',
         },
@@ -289,8 +239,10 @@ const adminMenus = [
       {
         name: 'AdminRoles',
         path: '/admin/roles',
-        component: '/guardian-shield/admin/roles/index',
+        component: () =>
+          import('#/views/guardian-shield/admin/roles/index.vue'),
         meta: {
+          authority: ['admin'],
           icon: 'lucide:key-round',
           title: '角色权限',
         },
@@ -298,8 +250,10 @@ const adminMenus = [
       {
         name: 'AdminRules',
         path: '/admin/rules',
-        component: '/guardian-shield/admin/rules/index',
+        component: () =>
+          import('#/views/guardian-shield/admin/rules/index.vue'),
         meta: {
+          authority: ['admin'],
           icon: 'lucide:scan-search',
           title: '风险规则',
         },
@@ -307,8 +261,10 @@ const adminMenus = [
       {
         name: 'AdminContents',
         path: '/admin/contents',
-        component: '/guardian-shield/admin/contents/index',
+        component: () =>
+          import('#/views/guardian-shield/admin/contents/index.vue'),
         meta: {
+          authority: ['admin'],
           icon: 'lucide:book-copy',
           title: '内容管理',
         },
@@ -316,8 +272,10 @@ const adminMenus = [
       {
         name: 'AdminSystemSettings',
         path: '/admin/system-settings',
-        component: '/guardian-shield/admin/system-settings/index',
+        component: () =>
+          import('#/views/guardian-shield/admin/system-settings/index.vue'),
         meta: {
+          authority: ['admin'],
           icon: 'lucide:settings-2',
           title: '系统配置',
         },
@@ -326,47 +284,4 @@ const adminMenus = [
   },
 ];
 
-export const MOCK_MENUS = [
-  {
-    menus: elderMenus,
-    username: 'elder',
-  },
-  {
-    menus: familyMenus,
-    username: 'family',
-  },
-  {
-    menus: communityMenus,
-    username: 'community',
-  },
-  {
-    menus: adminMenus,
-    username: 'admin',
-  },
-];
-
-export const MOCK_MENU_LIST = [];
-
-interface MenuNode {
-  children?: MenuNode[];
-  id?: number | string;
-}
-
-export function getMenuIds(menuList: MenuNode[]) {
-  const result: Array<number | string> = [];
-
-  const visit = (items: MenuNode[]) => {
-    for (const item of items) {
-      if (item.id !== undefined) {
-        result.push(item.id);
-      }
-      if (item.children?.length) {
-        visit(item.children);
-      }
-    }
-  };
-
-  visit(menuList);
-
-  return result;
-}
+export default routes;
