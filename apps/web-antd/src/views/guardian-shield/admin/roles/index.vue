@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue';
 
-import { Card, Col, List, Row, Space, Tag } from 'ant-design-vue';
+import { Card, Col, Row, Space, Tag } from 'ant-design-vue';
 
 import { getRolePermissionOverviewApi } from '#/api';
 import type { RolePermissionOverviewItem } from '#/api';
@@ -9,42 +9,37 @@ import type { RolePermissionOverviewItem } from '#/api';
 defineOptions({ name: 'AdminRoles' });
 
 const loading = ref(false);
-const roles = ref<RolePermissionOverviewItem[]>([]);
+const rows = ref<RolePermissionOverviewItem[]>([]);
 
 const summaryCards = computed(() => [
   {
-    title: '基础角色',
-    value: `${roles.value.length}`,
-    description: '当前已接入 elder、family、community、admin 四类基础角色。',
+    title: '角色数量',
+    value: `${rows.value.length}`,
+    description: '当前系统内可见的角色类型。',
   },
   {
-    title: '菜单总量',
-    value: `${roles.value.reduce((sum, item) => sum + item.menuCount, 0)}`,
-    description: '展示各角色当前可访问的菜单规模。',
+    title: '菜单总数',
+    value: `${rows.value.reduce((sum, item) => sum + item.menuCount, 0)}`,
+    description: '用于快速查看不同角色可访问页面数量。',
   },
   {
-    title: '权限码总量',
-    value: `${roles.value.reduce((sum, item) => sum + item.codeCount, 0)}`,
-    description: '为后续按钮权限和接口权限扩展预留口径。',
-  },
-  {
-    title: '权限骨架',
-    value: '已联通',
-    description: '已实现角色登录、菜单返回与权限码展示链路。',
+    title: '权限项总数',
+    value: `${rows.value.reduce((sum, item) => sum + item.codeCount, 0)}`,
+    description: '为后续精细化权限控制提供口径。',
   },
 ]);
 
-async function loadRoles() {
+async function loadRows() {
   loading.value = true;
   try {
-    roles.value = await getRolePermissionOverviewApi();
+    rows.value = await getRolePermissionOverviewApi();
   } finally {
     loading.value = false;
   }
 }
 
 onMounted(() => {
-  void loadRoles();
+  void loadRows();
 });
 </script>
 
@@ -52,16 +47,16 @@ onMounted(() => {
   <div class="admin-roles-page">
     <section class="hero-panel">
       <div>
-        <p class="eyebrow">管理后台 / 权限骨架</p>
+        <p class="eyebrow">管理后台 / 权限总览</p>
         <h1>角色权限</h1>
         <p class="description">
-          当前页面已经接入真实 mock 角色权限概览，可查看各角色菜单、权限码和业务职责，作为第一阶段权限体系的可视化入口。
+          当前页面已经接入角色权限 mock 数据，支持查看角色说明、菜单项和权限资源，满足第一阶段“角色查看与权限项展示”目标。
         </p>
       </div>
     </section>
 
     <Row :gutter="[16, 16]" class="summary-row">
-      <Col v-for="item in summaryCards" :key="item.title" :lg="6" :md="12" :span="24">
+      <Col v-for="item in summaryCards" :key="item.title" :lg="8" :span="24">
         <Card class="summary-card" :bordered="false">
           <p class="summary-title">{{ item.title }}</p>
           <strong class="summary-value">{{ item.value }}</strong>
@@ -70,53 +65,37 @@ onMounted(() => {
       </Col>
     </Row>
 
-    <Card class="list-card" :bordered="false">
-      <List
-        :data-source="roles"
-        :loading="loading"
-        :locale="{ emptyText: '暂无角色权限数据' }"
-        item-layout="vertical"
-      >
-        <template #renderItem="{ item }">
-          <List.Item class="role-item">
-            <div class="role-header">
-              <div>
-                <h3>{{ item.name }}</h3>
-                <p class="role-meta">{{ item.role }} · {{ item.scope }}</p>
-              </div>
-              <Space wrap>
-                <Tag color="blue">{{ item.menuCount }} 个菜单</Tag>
-                <Tag color="purple">{{ item.codeCount }} 个权限码</Tag>
-              </Space>
+    <Row :gutter="[16, 16]" class="list-row">
+      <Col v-for="item in rows" :key="item.role" :lg="12" :span="24">
+        <Card class="role-card" :bordered="false" :loading="loading">
+          <div class="role-head">
+            <div>
+              <h3>{{ item.name }}</h3>
+              <p>{{ item.scope }}</p>
             </div>
-            <p class="description-text">{{ item.description }}</p>
-
-            <Row :gutter="[16, 16]">
-              <Col :lg="12" :span="24">
-                <div class="info-card">
-                  <p class="info-label">菜单范围</p>
-                  <Space wrap>
-                    <Tag v-for="menu in item.menus" :key="menu" color="blue">
-                      {{ menu }}
-                    </Tag>
-                  </Space>
-                </div>
-              </Col>
-              <Col :lg="12" :span="24">
-                <div class="info-card">
-                  <p class="info-label">权限码</p>
-                  <Space wrap>
-                    <Tag v-for="resource in item.resources" :key="resource" color="purple">
-                      {{ resource }}
-                    </Tag>
-                  </Space>
-                </div>
-              </Col>
-            </Row>
-          </List.Item>
-        </template>
-      </List>
-    </Card>
+            <Space>
+              <Tag color="blue">{{ item.menuCount }} 个菜单</Tag>
+              <Tag color="gold">{{ item.codeCount }} 个权限项</Tag>
+            </Space>
+          </div>
+          <p class="role-desc">{{ item.description }}</p>
+          <div class="block">
+            <p class="label">可访问菜单</p>
+            <Space wrap>
+              <Tag v-for="menu in item.menus" :key="menu">{{ menu }}</Tag>
+            </Space>
+          </div>
+          <div class="block">
+            <p class="label">权限资源</p>
+            <Space wrap>
+              <Tag v-for="resource in item.resources" :key="resource" color="processing">
+                {{ resource }}
+              </Tag>
+            </Space>
+          </div>
+        </Card>
+      </Col>
+    </Row>
   </div>
 </template>
 
@@ -125,18 +104,17 @@ onMounted(() => {
   min-height: 100%;
   padding: 24px;
   background:
-    radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 28%),
-    linear-gradient(180deg, #faf8ff 0%, #f3f0ff 100%);
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
 }
 
 .hero-panel,
 .summary-card,
-.list-card,
-.info-card {
-  border: 1px solid rgba(124, 58, 237, 0.12);
+.role-card {
+  border: 1px solid rgba(59, 130, 246, 0.14);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 16px 36px rgba(91, 33, 182, 0.08);
+  box-shadow: 0 16px 36px rgba(30, 64, 175, 0.08);
 }
 
 .hero-panel {
@@ -145,84 +123,90 @@ onMounted(() => {
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #7c3aed;
+  color: #2563eb;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
-h1, h3 {
+h1 {
   margin: 0;
-  color: #4c1d95;
-}
-
-.description,
-.summary-desc,
-.description-text,
-.role-meta {
-  color: #6d28d9;
+  color: #1d4ed8;
+  font-size: 34px;
 }
 
 .description {
-  max-width: 760px;
-  margin-top: 16px;
+  margin: 16px 0 0;
+  color: #334155;
   line-height: 1.8;
 }
 
 .summary-row,
-.list-card {
+.list-row {
   margin-top: 18px;
 }
 
-.summary-title {
+.summary-title,
+.summary-desc {
   margin: 0;
-  color: #7c3aed;
+}
+
+.summary-title {
+  color: #1d4ed8;
 }
 
 .summary-value {
   display: block;
   margin-top: 10px;
-  color: #4c1d95;
+  color: #172554;
   font-size: 30px;
 }
 
-.summary-desc,
-.description-text,
-.role-meta {
-  margin-top: 10px;
+.summary-desc {
+  margin-top: 12px;
+  color: #475569;
   line-height: 1.7;
 }
 
-.role-item {
-  padding: 6px 0 20px;
-}
-
-.role-header {
+.role-head {
   display: flex;
   justify-content: space-between;
   gap: 16px;
 }
 
-.info-card {
-  height: 100%;
-  padding: 18px;
+.role-head h3 {
+  margin: 0;
+  color: #1e3a8a;
 }
 
-.info-label {
-  margin: 0 0 12px;
-  color: #7c3aed;
+.role-head p,
+.role-desc {
+  margin: 8px 0 0;
+  color: #475569;
+  line-height: 1.8;
+}
+
+.block {
+  margin-top: 16px;
+}
+
+.label {
+  margin: 0 0 10px;
+  color: #1d4ed8;
   font-weight: 700;
 }
 
 @media (max-width: 768px) {
-  .admin-roles-page,
-  .family-alerts-page,
-  .family-notifications-page {
+  .admin-roles-page {
     padding: 16px;
   }
 
-  .role-header {
+  .role-head {
     flex-direction: column;
+  }
+
+  h1 {
+    font-size: 28px;
   }
 }
 </style>
