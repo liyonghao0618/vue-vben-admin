@@ -18,7 +18,9 @@ def get_db_settings() -> str:
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = create_engine(get_db_settings(), future=True)
+        database_url = get_db_settings()
+        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        _engine = create_engine(database_url, future=True, connect_args=connect_args)
     return _engine
 
 

@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.services.db_init import ensure_database_ready
 
 settings = get_settings()
 configure_logging(settings)
@@ -15,6 +16,7 @@ configure_logging(settings)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    ensure_database_ready()
     yield
 
 
@@ -38,4 +40,3 @@ app.add_middleware(
 app.add_middleware(RequestContextMiddleware)
 register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.app_api_prefix)
-

@@ -12,11 +12,14 @@
 ## 快速启动
 
 ```bash
+docker compose up -d postgres
+
 cd apps/backend-fastapi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
+.venv/bin/alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -25,6 +28,51 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/redoc`
 - `http://127.0.0.1:8000/api/v1/health`
+
+## Codespace / Docker 推荐方式
+
+在 Codespace 这类临时开发环境里，推荐把数据库放进仓库内的 `compose.yaml`，这样环境更容易复现，也不依赖手工安装 PostgreSQL。
+
+1. 在仓库根目录启动数据库：
+
+```bash
+docker compose up -d postgres
+```
+
+2. 进入后端目录，初始化 Python 环境并执行迁移：
+
+```bash
+cd apps/backend-fastapi
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+.venv/bin/alembic upgrade head
+```
+
+3. 启动 FastAPI：
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+默认配置下，`.env.example` 已经指向 compose 中的 PostgreSQL：
+
+```env
+APP_DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/guard_silver"
+```
+
+停止数据库：
+
+```bash
+docker compose down
+```
+
+如果希望保留数据卷，直接执行上面的命令即可；如果连数据一起清空，再执行：
+
+```bash
+docker compose down -v
+```
 
 ## 默认演示账号
 
@@ -45,6 +93,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - 管理端：`/api/v1/admin/users`、`/roles`、`/rules`、`/contents`、`/system-config`
 
 这些接口当前使用内置演示数据服务返回稳定结构，适合前端联调、OpenAPI 演示和后续替换为数据库实现。
+
+这意味着当前项目已经具备“真实数据库 + 迁移”的基础设施，但不是所有业务接口都已经改成数据库查询。
 
 ## 运行测试
 

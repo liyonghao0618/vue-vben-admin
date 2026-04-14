@@ -6,7 +6,7 @@ from fastapi import Depends, Header, HTTPException, status
 from app.constants.roles import UserRole
 from app.core.security import decode_access_token
 from app.schemas.user import UserProfile
-from app.services.auth import get_demo_user_by_id
+from app.services.auth import get_user_by_id
 
 
 def get_bearer_token(authorization: Annotated[str | None, Header()] = None) -> str:
@@ -20,7 +20,7 @@ def get_bearer_token(authorization: Annotated[str | None, Header()] = None) -> s
 
 def get_current_user(token: Annotated[str, Depends(get_bearer_token)]) -> UserProfile:
     payload = decode_access_token(token)
-    user = get_demo_user_by_id(payload.sub)
+    user = get_user_by_id(payload.sub)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,4 +39,3 @@ def require_roles(*roles: UserRole) -> Callable[[UserProfile], UserProfile]:
         return user
 
     return checker
-

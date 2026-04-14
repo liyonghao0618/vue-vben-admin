@@ -1,11 +1,21 @@
+import os
+import tempfile
+
+import pytest
 from fastapi.testclient import TestClient
+
+os.environ["APP_DATABASE_URL"] = f"sqlite:///{tempfile.gettempdir()}/guard_silver_test.db"
 
 from app.main import app
 
-client = TestClient(app)
+
+@pytest.fixture
+def client() -> TestClient:
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def auth_headers(username: str, password: str) -> dict[str, str]:
+def auth_headers(client: TestClient, username: str, password: str) -> dict[str, str]:
     response = client.post(
         "/api/v1/auth/login",
         json={"username": username, "password": password},
@@ -15,7 +25,7 @@ def auth_headers(username: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_auth_login_roles_and_refresh() -> None:
+def test_auth_login_roles_and_refresh(client: TestClient) -> None:
     login_response = client.post(
         "/api/v1/auth/login",
         json={"username": "admin_demo", "password": "Admin123!"},
@@ -34,8 +44,8 @@ def test_auth_login_roles_and_refresh() -> None:
     assert refresh_response.json()["data"]["token_type"] == "bearer"
 
 
-def test_family_bindings_alerts_and_notifications() -> None:
-    headers = auth_headers("family_demo", "Family123!")
+def test_family_bindings_alerts_and_notifications(client: TestClient) -> None:
+    headers = auth_headers(client, "family_demo", "Family123!")
 
     bindings_response = client.get("/api/v1/bindings", headers=headers)
     assert bindings_response.status_code == 200
@@ -50,8 +60,8 @@ def test_family_bindings_alerts_and_notifications() -> None:
     assert notifications_response.json()["data"]["items"][0]["receiver_name"] == "王女士"
 
 
-def test_community_workorder_transition() -> None:
-    headers = auth_headers("community_demo", "Community123!")
+def test_community_workorder_transition(client: TestClient) -> None:
+    headers = auth_headers(client, "community_demo", "Community123!")
 
     elders_response = client.get("/api/v1/community/elders", headers=headers)
     assert elders_response.status_code == 200
@@ -72,8 +82,8 @@ def test_community_workorder_transition() -> None:
     assert transition_response.json()["data"]["status"] == "closed"
 
 
-def test_admin_management_endpoints() -> None:
-    headers = auth_headers("admin_demo", "Admin123!")
+def test_admin_management_endpoints(client: TestClient) -> None:
+    headers = auth_headers(client, "admin_demo", "Admin123!")
 
     users_response = client.get("/api/v1/admin/users", headers=headers)
     roles_response = client.get("/api/v1/admin/roles", headers=headers)

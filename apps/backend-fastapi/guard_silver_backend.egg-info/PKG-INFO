@@ -4,10 +4,13 @@ Version: 0.1.0
 Summary: FastAPI backend foundation for the Guard Silver anti-fraud platform.
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
+Requires-Dist: alembic<2.0,>=1.15
 Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: psycopg[binary]<4.0,>=3.2
 Requires-Dist: pydantic-settings<3.0,>=2.7
 Requires-Dist: pyjwt[crypto]<3.0,>=2.10
 Requires-Dist: python-json-logger<3.0,>=2.0
+Requires-Dist: sqlalchemy<3.0,>=2.0
 Requires-Dist: uvicorn[standard]<1.0,>=0.34
 Provides-Extra: dev
 Requires-Dist: httpx<1.0,>=0.28; extra == "dev"
@@ -22,15 +25,19 @@ Requires-Dist: pytest<9.0,>=8.3; extra == "dev"
 - 请求日志、中间件、健康检查
 - JWT 鉴权与角色权限依赖
 - OpenAPI 文档与接口目录草案
+- SQLAlchemy 数据模型与 Alembic 迁移底座
 
 ## 快速启动
 
 ```bash
+docker compose up -d postgres
+
 cd apps/backend-fastapi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
+.venv/bin/alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -40,14 +47,79 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `http://127.0.0.1:8000/redoc`
 - `http://127.0.0.1:8000/api/v1/health`
 
+## Codespace / Docker 推荐方式
+
+在 Codespace 这类临时开发环境里，推荐把数据库放进仓库内的 `compose.yaml`，这样环境更容易复现，也不依赖手工安装 PostgreSQL。
+
+1. 在仓库根目录启动数据库：
+
+```bash
+docker compose up -d postgres
+```
+
+2. 进入后端目录，初始化 Python 环境并执行迁移：
+
+```bash
+cd apps/backend-fastapi
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+.venv/bin/alembic upgrade head
+```
+
+3. 启动 FastAPI：
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+默认配置下，`.env.example` 已经指向 compose 中的 PostgreSQL：
+
+```env
+APP_DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/guard_silver"
+```
+
+停止数据库：
+
+```bash
+docker compose down
+```
+
+如果希望保留数据卷，直接执行上面的命令即可；如果连数据一起清空，再执行：
+
+```bash
+docker compose down -v
+```
+
 ## 默认演示账号
 
-当前为基础工程阶段，内置演示账号用于验证鉴权与角色权限：
+当前已进入 3.4 真实业务 API 联调阶段，内置演示账号用于验证鉴权、角色权限和业务接口：
 
 - `elder_demo / Elder123!`
 - `family_demo / Family123!`
 - `community_demo / Community123!`
 - `admin_demo / Admin123!`
+
+## 已落地的业务 API
+
+- 认证：`/api/v1/auth/login`、`/logout`、`/refresh`、`/me`、`/roles`
+- 绑定关系：`/api/v1/bindings`
+- 风险告警：`/api/v1/risk-alerts`
+- 通知记录：`/api/v1/notifications`
+- 社区重点老人和工单：`/api/v1/community/elders`、`/community/workorders`
+- 管理端：`/api/v1/admin/users`、`/roles`、`/rules`、`/contents`、`/system-config`
+
+这些接口当前使用内置演示数据服务返回稳定结构，适合前端联调、OpenAPI 演示和后续替换为数据库实现。
+
+这意味着当前项目已经具备“真实数据库 + 迁移”的基础设施，但不是所有业务接口都已经改成数据库查询。
+
+## 运行测试
+
+```bash
+cd apps/backend-fastapi
+.venv/bin/pytest
+```
 
 ## 目录结构
 
@@ -57,12 +129,23 @@ apps/backend-fastapi
 │   ├── api
 │   ├── constants
 │   ├── core
+│   ├── db
+│   ├── models
 │   ├── schemas
 │   └── services
+├── alembic
 ├── docs
 ├── .env.example
+├── alembic.ini
 └── pyproject.toml
 ```
 
-后续 3.3、3.4 会在此目录继续补充数据库模型、迁移和真实业务接口。
+## 数据库迁移
 
+```bash
+cd apps/backend-fastapi
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/alembic upgrade head
+```
+
+默认通过 `APP_DATABASE_URL` 连接 PostgreSQL。首版已补齐 3.3 所需核心表结构，详见 [docs/database-design.md](/workspaces/vue-vben-admin/apps/backend-fastapi/docs/database-design.md)。

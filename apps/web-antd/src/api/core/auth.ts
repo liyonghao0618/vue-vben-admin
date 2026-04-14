@@ -13,8 +13,7 @@ export namespace AuthApi {
   }
 
   export interface RefreshTokenResult {
-    data: string;
-    status: number;
+    accessToken: string;
   }
 }
 
@@ -22,16 +21,24 @@ export namespace AuthApi {
  * 登录
  */
 export async function loginApi(data: AuthApi.LoginParams) {
-  return requestClient.post<AuthApi.LoginResult>('/auth/login', data);
+  const result = await requestClient.post<{
+    access_token: string;
+  }>('/auth/login', data);
+  return {
+    accessToken: result.access_token,
+  };
 }
 
 /**
  * 刷新accessToken
  */
 export async function refreshTokenApi() {
-  return baseRequestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
-    withCredentials: true,
-  });
+  const result = await requestClient.post<{
+    access_token: string;
+  }>('/auth/refresh', {});
+  return {
+    accessToken: result.access_token,
+  };
 }
 
 /**
@@ -47,5 +54,11 @@ export async function logoutApi() {
  * 获取用户权限码
  */
 export async function getAccessCodesApi() {
-  return requestClient.get<string[]>('/auth/codes');
+  const roles = await requestClient.get<
+    Array<{
+      code: string;
+      permissions: string[];
+    }>
+  >('/auth/roles');
+  return roles.flatMap((item) => item.permissions);
 }

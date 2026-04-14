@@ -1,11 +1,26 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import aliased, selectinload
 
 from app.constants.roles import UserRole
+from app.db.session import session_scope
+from app.models import (
+    EducationContent,
+    ElderFamilyBinding,
+    NotificationRecord,
+    PromptTemplate,
+    RiskAlert,
+    RiskRule,
+    SystemConfig,
+    User,
+    UserRoleLink,
+    Workorder,
+    WorkorderAction,
+)
 from app.schemas.business import (
     AdminUserItem,
     BindingCreateRequest,
@@ -27,340 +42,10 @@ from app.schemas.business import (
     WorkorderTransitionRequest,
 )
 from app.schemas.user import UserProfile
-from app.services.auth import DEMO_USERS
-
-ROLE_DETAILS = {
-    UserRole.ELDER: {
-        "name": "老年用户",
-        "description": "接收风险提醒、求助和亲属绑定。",
-        "permissions": ["elder:read", "sos:create", "binding:manage"],
-    },
-    UserRole.FAMILY: {
-        "name": "子女用户",
-        "description": "查看老人风险、接收通知和监护设置。",
-        "permissions": ["family:read", "alerts:read", "notifications:read", "bindings:read"],
-    },
-    UserRole.COMMUNITY: {
-        "name": "社区工作人员",
-        "description": "查看重点老人、处理工单和回访协同。",
-        "permissions": ["community:read", "workorder:read", "workorder:update", "elder-focus:read"],
-    },
-    UserRole.ADMIN: {
-        "name": "系统管理员",
-        "description": "管理用户、角色、规则、内容和系统配置。",
-        "permissions": ["*"],
-    },
-}
-
-USERS = {
-    "u-elder-001": {
-        "user_id": "u-elder-001",
-        "username": "elder_demo",
-        "display_name": "李阿姨",
-        "phone": "138****1001",
-        "status": "active",
-        "roles": [UserRole.ELDER],
-        "permissions": ["elder:read", "sos:create", "binding:manage"],
-        "last_login_at": "2026-04-14T08:30:00Z",
-        "age": 72,
-        "gender": "女",
-    },
-    "u-elder-002": {
-        "user_id": "u-elder-002",
-        "username": "elder_demo_2",
-        "display_name": "周叔叔",
-        "phone": "138****1002",
-        "status": "active",
-        "roles": [UserRole.ELDER],
-        "permissions": ["elder:read", "sos:create", "binding:manage"],
-        "last_login_at": "2026-04-13T17:20:00Z",
-        "age": 68,
-        "gender": "男",
-    },
-    "u-family-001": {
-        "user_id": "u-family-001",
-        "username": "family_demo",
-        "display_name": "王女士",
-        "phone": "139****2001",
-        "status": "active",
-        "roles": [UserRole.FAMILY],
-        "permissions": ["family:read", "alerts:read", "notifications:read", "bindings:read"],
-        "last_login_at": "2026-04-14T09:00:00Z",
-    },
-    "u-family-002": {
-        "user_id": "u-family-002",
-        "username": "family_demo_2",
-        "display_name": "李先生",
-        "phone": "139****2002",
-        "status": "active",
-        "roles": [UserRole.FAMILY],
-        "permissions": ["family:read", "alerts:read", "notifications:read", "bindings:read"],
-        "last_login_at": "2026-04-13T19:45:00Z",
-    },
-    "u-community-001": {
-        "user_id": "u-community-001",
-        "username": "community_demo",
-        "display_name": "社区网格员张强",
-        "phone": "137****3001",
-        "status": "active",
-        "roles": [UserRole.COMMUNITY],
-        "permissions": ["community:read", "workorder:read", "workorder:update", "elder-focus:read"],
-        "last_login_at": "2026-04-14T07:50:00Z",
-    },
-    "u-community-002": {
-        "user_id": "u-community-002",
-        "username": "community_demo_2",
-        "display_name": "社区社工陈敏",
-        "phone": "137****3002",
-        "status": "active",
-        "roles": [UserRole.COMMUNITY],
-        "permissions": ["community:read", "workorder:read", "workorder:update", "elder-focus:read"],
-        "last_login_at": "2026-04-13T18:10:00Z",
-    },
-    "u-admin-001": {
-        "user_id": "u-admin-001",
-        "username": "admin_demo",
-        "display_name": "系统管理员",
-        "phone": "136****4001",
-        "status": "active",
-        "roles": [UserRole.ADMIN],
-        "permissions": ["*"],
-        "last_login_at": "2026-04-14T08:10:00Z",
-    },
-}
-
-BINDINGS = [
-    {
-        "id": "bind-001",
-        "elder_user_id": "u-elder-001",
-        "family_user_id": "u-family-001",
-        "relationship_type": "daughter",
-        "status": "active",
-        "is_emergency_contact": True,
-        "authorized_at": "2026-04-10T10:00:00Z",
-    },
-    {
-        "id": "bind-002",
-        "elder_user_id": "u-elder-002",
-        "family_user_id": "u-family-002",
-        "relationship_type": "son",
-        "status": "active",
-        "is_emergency_contact": True,
-        "authorized_at": "2026-04-09T15:20:00Z",
-    },
-]
-
-RISK_ALERTS = [
-    {
-        "id": "alert-001",
-        "elder_user_id": "u-elder-001",
-        "source_type": "sms",
-        "risk_level": "high",
-        "risk_score": 92,
-        "title": "疑似冒充客服退款短信",
-        "summary": "短信包含退款链接与验证码索取内容，存在诱导转账风险。",
-        "reason_detail": "命中“退款链接”“验证码”“客服补偿”多条高危规则，且短信中包含短链。",
-        "suggestion_action": "不要点击链接，不要透露验证码，建议联系子女核实并保留短信截图。",
-        "status": "pending_follow_up",
-        "occurred_at": "2026-04-14T08:22:00Z",
-        "hit_rule_codes": ["SMS_REFUND_LINK", "SMS_VERIFY_CODE"],
-        "related_notification_ids": ["notify-001", "notify-002"],
-        "related_workorder_ids": ["wo-001"],
-    },
-    {
-        "id": "alert-002",
-        "elder_user_id": "u-elder-002",
-        "source_type": "call",
-        "risk_level": "medium",
-        "risk_score": 71,
-        "title": "疑似冒充公检法来电",
-        "summary": "通话中出现“安全账户”“配合调查”等敏感话术。",
-        "reason_detail": "命中公检法冒充与转账诱导话术，语义强度中等。",
-        "suggestion_action": "先挂断电话，通过官方渠道回拨核实，不要转账。",
-        "status": "new",
-        "occurred_at": "2026-04-13T19:10:00Z",
-        "hit_rule_codes": ["CALL_POLICE_IMPERSONATION"],
-        "related_notification_ids": ["notify-003"],
-        "related_workorder_ids": [],
-    },
-]
-
-NOTIFICATIONS = [
-    {
-        "id": "notify-001",
-        "receiver_user_id": "u-family-001",
-        "alert_id": "alert-001",
-        "channel": "app",
-        "notification_type": "risk_alert",
-        "title": "老人收到高风险诈骗短信",
-        "content": "李阿姨于 08:22 收到疑似退款诈骗短信，请尽快联系提醒。",
-        "status": "sent",
-        "is_read": False,
-        "sent_at": "2026-04-14T08:23:00Z",
-    },
-    {
-        "id": "notify-002",
-        "receiver_user_id": "u-community-001",
-        "alert_id": "alert-001",
-        "channel": "workbench",
-        "notification_type": "community_dispatch",
-        "title": "辖区出现高风险老人告警",
-        "content": "李阿姨命中高风险诈骗规则，建议安排电话回访。",
-        "status": "sent",
-        "is_read": True,
-        "sent_at": "2026-04-14T08:25:00Z",
-    },
-    {
-        "id": "notify-003",
-        "receiver_user_id": "u-family-002",
-        "alert_id": "alert-002",
-        "channel": "sms",
-        "notification_type": "risk_alert",
-        "title": "老人疑似接到冒充公检法电话",
-        "content": "周叔叔昨日晚间接到疑似诈骗电话，建议尽快回访。",
-        "status": "sent",
-        "is_read": False,
-        "sent_at": "2026-04-13T19:15:00Z",
-    },
-]
-
-COMMUNITY_ELDERS = [
-    {
-        "elder_user_id": "u-elder-001",
-        "tags": ["高风险", "需回访", "独居"],
-        "follow_up_status": "pending_visit",
-        "assigned_grid_member": "社区网格员张强",
-        "alert_count_7d": 3,
-    },
-    {
-        "elder_user_id": "u-elder-002",
-        "tags": ["电话回访中"],
-        "follow_up_status": "phone_following",
-        "assigned_grid_member": "社区社工陈敏",
-        "alert_count_7d": 1,
-    },
-]
-
-WORKORDERS = [
-    {
-        "id": "wo-001",
-        "workorder_no": "GD202604140001",
-        "alert_id": "alert-001",
-        "elder_user_id": "u-elder-001",
-        "title": "李阿姨高风险短信回访工单",
-        "priority": "high",
-        "status": "processing",
-        "assigned_to_user_id": "u-community-001",
-        "dispose_method": "phone_visit",
-        "dispose_result": None,
-        "closed_at": None,
-        "updated_at": "2026-04-14T09:05:00Z",
-    }
-]
-
-WORKORDER_ACTIONS = [
-    {
-        "id": "woa-001",
-        "workorder_id": "wo-001",
-        "action_type": "create",
-        "operator_user_id": "u-admin-001",
-        "from_status": None,
-        "to_status": "pending",
-        "note": "高风险短信自动转工单。",
-        "created_at": "2026-04-14T08:25:00Z",
-    },
-    {
-        "id": "woa-002",
-        "workorder_id": "wo-001",
-        "action_type": "assign",
-        "operator_user_id": "u-admin-001",
-        "from_status": "pending",
-        "to_status": "processing",
-        "note": "已指派社区网格员张强电话回访。",
-        "created_at": "2026-04-14T08:30:00Z",
-    },
-]
-
-RISK_RULES = [
-    {
-        "id": "rule-001",
-        "code": "SMS_REFUND_LINK",
-        "name": "短信退款链接识别",
-        "scene": "sms",
-        "risk_level": "high",
-        "priority": 10,
-        "status": "enabled",
-        "trigger_expression": "contains(refund) && contains(short_link)",
-        "reason_template": "短信涉及退款链接与身份核验，疑似引导跳转诈骗页面。",
-        "suggestion_template": "不要点击链接，建议联系官方客服核实。",
-    },
-    {
-        "id": "rule-002",
-        "code": "CALL_POLICE_IMPERSONATION",
-        "name": "冒充公检法来电",
-        "scene": "call",
-        "risk_level": "medium",
-        "priority": 20,
-        "status": "enabled",
-        "trigger_expression": "contains(security_account) && contains(investigation)",
-        "reason_template": "来电出现安全账户与配合调查话术。",
-        "suggestion_template": "挂断后主动拨打官方电话核实。",
-    },
-]
-
-CONTENTS = [
-    {
-        "id": "content-001",
-        "content_type": "template",
-        "code": "ALERT_HIGH_RISK_FAMILY",
-        "title": "高风险通知模板",
-        "category": "notification_template",
-        "audience": "family",
-        "channel": "app",
-        "status": "enabled",
-        "summary": "用于子女端高风险告警提醒。",
-        "updated_at": "2026-04-14T08:00:00Z",
-    },
-    {
-        "id": "content-002",
-        "content_type": "education",
-        "code": None,
-        "title": "警惕冒充客服退款骗局",
-        "category": "anti_fraud_article",
-        "audience": "elder",
-        "channel": "article",
-        "status": "published",
-        "summary": "讲解常见退款诈骗套路与识别要点。",
-        "updated_at": "2026-04-13T16:00:00Z",
-    },
-]
-
-SYSTEM_CONFIGS = [
-    {
-        "key": "risk.high_threshold",
-        "name": "高风险分数阈值",
-        "value": "85",
-        "group": "risk",
-        "description": "达到该分值时自动通知子女并生成社区工单。",
-    },
-    {
-        "key": "notification.family_channels",
-        "name": "子女通知渠道",
-        "value": "app,sms",
-        "group": "notification",
-        "description": "高风险事件默认通知渠道。",
-    },
-    {
-        "key": "workorder.auto_dispatch",
-        "name": "自动派单开关",
-        "value": "true",
-        "group": "workorder",
-        "description": "高风险告警是否自动生成社区工单。",
-    },
-]
+from app.services.db_init import ROLE_DETAILS
 
 
-def _paginate(items: list[dict], page: int, page_size: int) -> PagedResult:
+def _paginate[T](items: list[T], page: int, page_size: int) -> PagedResult:
     start = (page - 1) * page_size
     end = start + page_size
     return PagedResult(
@@ -369,291 +54,495 @@ def _paginate(items: list[dict], page: int, page_size: int) -> PagedResult:
     )
 
 
-def _get_user_name(user_id: str) -> str:
-    return USERS[user_id]["display_name"]
+def _to_str(value: datetime | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    return value
 
 
-def _get_alert(alert_id: str) -> dict:
-    for alert in RISK_ALERTS:
-        if alert["id"] == alert_id:
-            return alert
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="风险告警不存在")
+def _parse_notes(raw: str | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    result: dict[str, str] = {}
+    for pair in raw.split(";"):
+        if "=" not in pair:
+            continue
+        key, value = pair.split("=", 1)
+        result[key] = value
+    return result
 
 
-def _get_workorder(workorder_id: str) -> dict:
-    for workorder in WORKORDERS:
-        if workorder["id"] == workorder_id:
-            return workorder
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
-
-
-def _resolve_binding_item(binding: dict) -> BindingItem:
-    return BindingItem(
-        **binding,
-        elder_name=_get_user_name(binding["elder_user_id"]),
-        family_name=_get_user_name(binding["family_user_id"]),
-    )
+def get_paged_payload(items: list, page: int, page_size: int) -> PagedResult:
+    return _paginate(items, page, page_size)
 
 
 def list_roles() -> list[RoleInfo]:
-    role_counts = {role: 0 for role in ROLE_DETAILS}
-    for user in USERS.values():
-        for role in user["roles"]:
-            role_counts[role] += 1
+    with session_scope() as session:
+        rows = session.execute(
+            select(UserRoleLink.role_id, func.count(UserRoleLink.user_id)).group_by(UserRoleLink.role_id)
+        ).all()
+        counts = {role_id: count for role_id, count in rows}
 
-    return [
-        RoleInfo(
-            code=role,
-            name=detail["name"],
-            description=detail["description"],
-            permissions=detail["permissions"],
-            user_count=role_counts[role],
-        )
-        for role, detail in ROLE_DETAILS.items()
-    ]
+        role_rows = session.execute(select(UserRoleLink).options(selectinload(UserRoleLink.role))).scalars().all()
+        role_id_to_code = {link.role_id: UserRole(link.role.code) for link in role_rows}
+        role_counts = {role: 0 for role in ROLE_DETAILS}
+        for role_id, count in counts.items():
+            role = role_id_to_code.get(role_id)
+            if role:
+                role_counts[role] = count
+
+        return [
+            RoleInfo(
+                code=role,
+                name=str(detail["name"]),
+                description=str(detail["description"]),
+                permissions=[str(item) for item in detail["permissions"]],
+                user_count=role_counts.get(role, 0),
+            )
+            for role, detail in ROLE_DETAILS.items()
+        ]
 
 
 def list_admin_users(keyword: str | None = None, role: UserRole | None = None) -> list[AdminUserItem]:
-    result: list[AdminUserItem] = []
-    for user in USERS.values():
-        if keyword and keyword not in user["display_name"] and keyword not in user["username"]:
-            continue
-        if role and role not in user["roles"]:
-            continue
-        result.append(AdminUserItem(**{k: user[k] for k in AdminUserItem.model_fields}))
-    return result
+    with session_scope() as session:
+        query = select(User).options(selectinload(User.roles).selectinload(UserRoleLink.role))
+        if keyword:
+            pattern = f"%{keyword}%"
+            query = query.where(or_(User.username.ilike(pattern), User.display_name.ilike(pattern)))
+        users = session.execute(query.order_by(User.created_at.asc())).scalars().all()
+
+        result: list[AdminUserItem] = []
+        for user in users:
+            roles = [UserRole(link.role.code) for link in user.roles]
+            if role and role not in roles:
+                continue
+            permissions: list[str] = []
+            for role_item in roles:
+                permissions.extend(str(item) for item in ROLE_DETAILS[role_item]["permissions"])
+            result.append(
+                AdminUserItem(
+                    user_id=user.id,
+                    username=user.username,
+                    display_name=user.display_name,
+                    phone=user.phone,
+                    status=user.status,
+                    roles=roles,
+                    permissions=list(dict.fromkeys(permissions)),
+                    last_login_at=user.last_login_at,
+                )
+            )
+        return result
 
 
-def list_bindings(current_user: UserProfile) -> list[BindingItem]:
-    if UserRole.ADMIN in current_user.roles:
-        selected = BINDINGS
-    elif UserRole.ELDER in current_user.roles:
-        selected = [item for item in BINDINGS if item["elder_user_id"] == current_user.user_id]
-    elif UserRole.FAMILY in current_user.roles:
-        selected = [item for item in BINDINGS if item["family_user_id"] == current_user.user_id]
-    else:
-        selected = []
-    return [_resolve_binding_item(item) for item in selected]
+def list_bindings(user: UserProfile) -> list[BindingItem]:
+    ElderUser = aliased(User)
+    FamilyUser = aliased(User)
+    with session_scope() as session:
+        query = (
+            select(ElderFamilyBinding, ElderUser.display_name, FamilyUser.display_name)
+            .join(ElderUser, ElderFamilyBinding.elder_user_id == ElderUser.id)
+            .join(FamilyUser, ElderFamilyBinding.family_user_id == FamilyUser.id)
+        )
+        if UserRole.FAMILY in user.roles:
+            query = query.where(ElderFamilyBinding.family_user_id == user.user_id)
+        elif UserRole.ELDER in user.roles:
+            query = query.where(ElderFamilyBinding.elder_user_id == user.user_id)
+
+        rows = session.execute(query.order_by(ElderFamilyBinding.created_at.desc())).all()
+        return [
+            BindingItem(
+                id=binding.id,
+                elder_user_id=binding.elder_user_id,
+                elder_name=elder_name,
+                family_user_id=binding.family_user_id,
+                family_name=family_name,
+                relationship_type=binding.relationship_type,
+                status=binding.status,
+                is_emergency_contact=binding.is_emergency_contact,
+                authorized_at=binding.authorized_at or "",
+            )
+            for binding, elder_name, family_name in rows
+        ]
 
 
 def create_binding(payload: BindingCreateRequest) -> BindingItem:
-    for item in BINDINGS:
-        if item["elder_user_id"] == payload.elder_user_id and item["family_user_id"] == payload.family_user_id:
+    with session_scope() as session:
+        existing = session.scalar(
+            select(ElderFamilyBinding).where(
+                ElderFamilyBinding.elder_user_id == payload.elder_user_id,
+                ElderFamilyBinding.family_user_id == payload.family_user_id,
+            )
+        )
+        if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="绑定关系已存在")
 
-    binding = {
-        "id": f"bind-{len(BINDINGS) + 1:03d}",
-        "elder_user_id": payload.elder_user_id,
-        "family_user_id": payload.family_user_id,
-        "relationship_type": payload.relationship_type,
-        "status": "active",
-        "is_emergency_contact": payload.is_emergency_contact,
-        "authorized_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-    }
-    BINDINGS.append(binding)
-    return _resolve_binding_item(binding)
+        elder = session.get(User, payload.elder_user_id)
+        family = session.get(User, payload.family_user_id)
+        if not elder or not family:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="绑定用户不存在")
+
+        binding = ElderFamilyBinding(
+            elder_user_id=payload.elder_user_id,
+            family_user_id=payload.family_user_id,
+            relationship_type=payload.relationship_type,
+            is_emergency_contact=payload.is_emergency_contact,
+            status="active",
+            authorized_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+        session.add(binding)
+        session.flush()
+        return BindingItem(
+            id=binding.id,
+            elder_user_id=binding.elder_user_id,
+            elder_name=elder.display_name,
+            family_user_id=binding.family_user_id,
+            family_name=family.display_name,
+            relationship_type=binding.relationship_type,
+            status=binding.status,
+            is_emergency_contact=binding.is_emergency_contact,
+            authorized_at=binding.authorized_at or "",
+        )
 
 
 def update_binding(binding_id: str, payload: BindingUpdateRequest) -> BindingItem:
-    for item in BINDINGS:
-        if item["id"] != binding_id:
-            continue
+    with session_scope() as session:
+        binding = session.get(ElderFamilyBinding, binding_id)
+        if not binding:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="绑定关系不存在")
         if payload.relationship_type is not None:
-            item["relationship_type"] = payload.relationship_type
+            binding.relationship_type = payload.relationship_type
         if payload.status is not None:
-            item["status"] = payload.status
+            binding.status = payload.status
         if payload.is_emergency_contact is not None:
-            item["is_emergency_contact"] = payload.is_emergency_contact
-        return _resolve_binding_item(item)
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="绑定关系不存在")
+            binding.is_emergency_contact = payload.is_emergency_contact
+        elder = session.get(User, binding.elder_user_id)
+        family = session.get(User, binding.family_user_id)
+        return BindingItem(
+            id=binding.id,
+            elder_user_id=binding.elder_user_id,
+            elder_name=elder.display_name if elder else "",
+            family_user_id=binding.family_user_id,
+            family_name=family.display_name if family else "",
+            relationship_type=binding.relationship_type,
+            status=binding.status,
+            is_emergency_contact=binding.is_emergency_contact,
+            authorized_at=binding.authorized_at or "",
+        )
 
 
 def delete_binding(binding_id: str) -> None:
-    for index, item in enumerate(BINDINGS):
-        if item["id"] == binding_id:
-            BINDINGS.pop(index)
-            return
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="绑定关系不存在")
+    with session_scope() as session:
+        binding = session.get(ElderFamilyBinding, binding_id)
+        if not binding:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="绑定关系不存在")
+        session.delete(binding)
 
 
-def list_risk_alerts(current_user: UserProfile, risk_level: str | None = None) -> list[RiskAlertItem]:
-    def visible(alert: dict) -> bool:
-        if risk_level and alert["risk_level"] != risk_level:
-            return False
-        if UserRole.ADMIN in current_user.roles or UserRole.COMMUNITY in current_user.roles:
-            return True
-        if UserRole.ELDER in current_user.roles:
-            return alert["elder_user_id"] == current_user.user_id
-        if UserRole.FAMILY in current_user.roles:
-            elder_ids = {
-                item["elder_user_id"] for item in BINDINGS if item["family_user_id"] == current_user.user_id
-            }
-            return alert["elder_user_id"] in elder_ids
-        return False
-
-    return [
-        RiskAlertItem(
-            **{k: alert[k] for k in RiskAlertItem.model_fields if k not in {"elder_name"}},
-            elder_name=_get_user_name(alert["elder_user_id"]),
-        )
-        for alert in RISK_ALERTS
-        if visible(alert)
-    ]
+def list_risk_alerts(user: UserProfile, risk_level: str | None = None) -> list[RiskAlertItem]:
+    ElderUser = aliased(User)
+    with session_scope() as session:
+        query = select(RiskAlert, ElderUser.display_name).join(ElderUser, RiskAlert.elder_user_id == ElderUser.id)
+        if risk_level:
+            query = query.where(RiskAlert.risk_level == risk_level)
+        if UserRole.FAMILY in user.roles:
+            binding_subquery = select(ElderFamilyBinding.elder_user_id).where(ElderFamilyBinding.family_user_id == user.user_id)
+            query = query.where(RiskAlert.elder_user_id.in_(binding_subquery))
+        elif UserRole.ELDER in user.roles:
+            query = query.where(RiskAlert.elder_user_id == user.user_id)
+        rows = session.execute(query.order_by(RiskAlert.occurred_at.desc())).all()
+        return [
+            RiskAlertItem(
+                id=alert.id,
+                elder_user_id=alert.elder_user_id,
+                elder_name=elder_name,
+                source_type=alert.source_type,
+                risk_level=alert.risk_level,
+                risk_score=alert.risk_score,
+                title=alert.title,
+                summary=alert.summary,
+                status=alert.status,
+                occurred_at=alert.occurred_at,
+            )
+            for alert, elder_name in rows
+        ]
 
 
 def get_risk_alert_detail(alert_id: str) -> RiskAlertDetail:
-    alert = _get_alert(alert_id)
-    return RiskAlertDetail(
-        **{k: alert[k] for k in RiskAlertDetail.model_fields if k not in {"elder_name"}},
-        elder_name=_get_user_name(alert["elder_user_id"]),
-    )
-
-
-def list_notifications(current_user: UserProfile, is_read: bool | None = None) -> list[NotificationItem]:
-    items: list[NotificationItem] = []
-    for notification in NOTIFICATIONS:
-        if UserRole.ADMIN not in current_user.roles and notification["receiver_user_id"] != current_user.user_id:
-            continue
-        if is_read is not None and notification["is_read"] is not is_read:
-            continue
-        alert = _get_alert(notification["alert_id"])
-        items.append(
-            NotificationItem(
-                **notification,
-                receiver_name=_get_user_name(notification["receiver_user_id"]),
-                alert_title=alert["title"],
-            )
+    ElderUser = aliased(User)
+    with session_scope() as session:
+        row = session.execute(
+            select(RiskAlert, ElderUser.display_name)
+            .join(ElderUser, RiskAlert.elder_user_id == ElderUser.id)
+            .where(RiskAlert.id == alert_id)
+        ).first()
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="风险告警不存在")
+        alert, elder_name = row
+        notification_ids = session.scalars(
+            select(NotificationRecord.id).where(NotificationRecord.alert_id == alert.id)
+        ).all()
+        workorder_ids = session.scalars(select(Workorder.id).where(Workorder.alert_id == alert.id)).all()
+        return RiskAlertDetail(
+            id=alert.id,
+            elder_user_id=alert.elder_user_id,
+            elder_name=elder_name,
+            source_type=alert.source_type,
+            risk_level=alert.risk_level,
+            risk_score=alert.risk_score,
+            title=alert.title,
+            summary=alert.summary,
+            status=alert.status,
+            occurred_at=alert.occurred_at,
+            reason_detail=alert.reason_detail or "",
+            suggestion_action=alert.suggestion_action or "",
+            hit_rule_codes=[],
+            related_notification_ids=list(notification_ids),
+            related_workorder_ids=list(workorder_ids),
         )
-    return items
+
+
+def list_notifications(user: UserProfile, is_read: bool | None = None) -> list[NotificationItem]:
+    ReceiverUser = aliased(User)
+    with session_scope() as session:
+        query = (
+            select(NotificationRecord, ReceiverUser.display_name, RiskAlert.title)
+            .join(ReceiverUser, NotificationRecord.receiver_user_id == ReceiverUser.id)
+            .join(RiskAlert, NotificationRecord.alert_id == RiskAlert.id)
+            .where(NotificationRecord.receiver_user_id == user.user_id)
+        )
+        if is_read is not None:
+            query = query.where(NotificationRecord.is_read == is_read)
+        rows = session.execute(query.order_by(NotificationRecord.sent_at.desc())).all()
+        return [
+            NotificationItem(
+                id=item.id,
+                receiver_user_id=item.receiver_user_id,
+                receiver_name=receiver_name,
+                alert_id=item.alert_id,
+                alert_title=alert_title,
+                channel=item.channel,
+                notification_type=item.notification_type,
+                title=item.title,
+                content=item.content,
+                status=item.status,
+                is_read=item.is_read,
+                sent_at=item.sent_at or "",
+            )
+            for item, receiver_name, alert_title in rows
+        ]
 
 
 def list_community_elders(keyword: str | None = None, risk_level: str | None = None) -> list[CommunityElderItem]:
-    result: list[CommunityElderItem] = []
-    for item in COMMUNITY_ELDERS:
-        user = USERS[item["elder_user_id"]]
-        latest_alert = next((alert for alert in RISK_ALERTS if alert["elder_user_id"] == user["user_id"]), None)
-        level = latest_alert["risk_level"] if latest_alert else "low"
-        if keyword and keyword not in user["display_name"]:
-            continue
-        if risk_level and risk_level != level:
-            continue
-        result.append(
-            CommunityElderItem(
-                elder_user_id=user["user_id"],
-                elder_name=user["display_name"],
-                age=user["age"],
-                gender=user["gender"],
-                risk_level=level,
-                latest_alert_at=latest_alert["occurred_at"] if latest_alert else None,
-                latest_alert_title=latest_alert["title"] if latest_alert else None,
-                tags=item["tags"],
-                follow_up_status=item["follow_up_status"],
-                assigned_grid_member=item["assigned_grid_member"],
-                alert_count_7d=item["alert_count_7d"],
+    with session_scope() as session:
+        elder_ids = session.scalars(
+            select(ElderFamilyBinding.elder_user_id).distinct()
+        ).all()
+        elders = session.execute(select(User).where(User.id.in_(elder_ids)).order_by(User.created_at.asc())).scalars().all()
+        results: list[CommunityElderItem] = []
+        for elder in elders:
+            notes = _parse_notes(elder.notes)
+            alerts = session.execute(
+                select(RiskAlert).where(RiskAlert.elder_user_id == elder.id).order_by(RiskAlert.occurred_at.desc())
+            ).scalars().all()
+            latest_alert = alerts[0] if alerts else None
+            if keyword and keyword not in elder.display_name and keyword not in elder.username:
+                continue
+            current_risk_level = latest_alert.risk_level if latest_alert else "low"
+            if risk_level and current_risk_level != risk_level:
+                continue
+            results.append(
+                CommunityElderItem(
+                    elder_user_id=elder.id,
+                    elder_name=elder.display_name,
+                    age=int(notes.get("age", "0")),
+                    gender=notes.get("gender", ""),
+                    risk_level=current_risk_level,
+                    latest_alert_at=latest_alert.occurred_at if latest_alert else None,
+                    latest_alert_title=latest_alert.title if latest_alert else None,
+                    tags=[tag for tag in notes.get("tags", "").split("|") if tag],
+                    follow_up_status=notes.get("follow_up_status", "pending"),
+                    assigned_grid_member=notes.get("assigned_grid_member", ""),
+                    alert_count_7d=len(alerts),
+                )
             )
-        )
-    return result
+        return results
 
 
 def list_workorders(status_filter: str | None = None) -> list[WorkorderItem]:
-    result: list[WorkorderItem] = []
-    for item in WORKORDERS:
-        if status_filter and item["status"] != status_filter:
-            continue
-        result.append(
-            WorkorderItem(
-                **{k: item[k] for k in WorkorderItem.model_fields if k not in {"elder_name", "assigned_to_name"}},
-                elder_name=_get_user_name(item["elder_user_id"]),
-                assigned_to_name=_get_user_name(item["assigned_to_user_id"]) if item["assigned_to_user_id"] else None,
-            )
+    ElderUser = aliased(User)
+    AssignedUser = aliased(User)
+    with session_scope() as session:
+        query = (
+            select(Workorder, ElderUser.display_name, AssignedUser.display_name)
+            .join(ElderUser, Workorder.elder_user_id == ElderUser.id)
+            .outerjoin(AssignedUser, Workorder.assigned_to_user_id == AssignedUser.id)
         )
-    return result
+        if status_filter:
+            query = query.where(Workorder.status == status_filter)
+        rows = session.execute(query.order_by(Workorder.updated_at.desc())).all()
+        return [
+            WorkorderItem(
+                id=item.id,
+                workorder_no=item.workorder_no,
+                alert_id=item.alert_id,
+                elder_user_id=item.elder_user_id,
+                elder_name=elder_name,
+                title=item.title,
+                priority=item.priority,
+                status=item.status,
+                assigned_to_user_id=item.assigned_to_user_id,
+                assigned_to_name=assigned_name,
+                dispose_method=item.dispose_method,
+                updated_at=_to_str(item.updated_at) or "",
+            )
+            for item, elder_name, assigned_name in rows
+        ]
 
 
 def get_workorder_detail(workorder_id: str) -> WorkorderDetail:
-    workorder = _get_workorder(workorder_id)
-    alert = _get_alert(workorder["alert_id"])
-    actions = [
-        WorkorderActionItem(
-            **action,
-            operator_name=_get_user_name(action["operator_user_id"]),
+    with session_scope() as session:
+        workorder = session.scalar(
+            select(Workorder)
+            .options(selectinload(Workorder.actions).selectinload(WorkorderAction.operator_user))
+            .where(Workorder.id == workorder_id)
         )
-        for action in WORKORDER_ACTIONS
-        if action["workorder_id"] == workorder_id
-    ]
-    return WorkorderDetail(
-        **{k: workorder[k] for k in WorkorderDetail.model_fields if k not in {"elder_name", "assigned_to_name", "latest_alert_summary", "actions"}},
-        elder_name=_get_user_name(workorder["elder_user_id"]),
-        assigned_to_name=_get_user_name(workorder["assigned_to_user_id"]) if workorder["assigned_to_user_id"] else None,
-        latest_alert_summary=alert["summary"],
-        actions=actions,
-    )
+        if not workorder:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
+        elder = session.get(User, workorder.elder_user_id)
+        assigned = session.get(User, workorder.assigned_to_user_id) if workorder.assigned_to_user_id else None
+        alert = session.get(RiskAlert, workorder.alert_id)
+        actions = [
+            WorkorderActionItem(
+                id=item.id,
+                action_type=item.action_type,
+                operator_user_id=item.operator_user_id or "",
+                operator_name=item.operator_user.display_name if item.operator_user else "",
+                from_status=item.from_status,
+                to_status=item.to_status,
+                note=item.note,
+                created_at=_to_str(item.created_at) or "",
+            )
+            for item in sorted(workorder.actions, key=lambda action: action.created_at)
+        ]
+        return WorkorderDetail(
+            id=workorder.id,
+            workorder_no=workorder.workorder_no,
+            alert_id=workorder.alert_id,
+            elder_user_id=workorder.elder_user_id,
+            elder_name=elder.display_name if elder else "",
+            title=workorder.title,
+            priority=workorder.priority,
+            status=workorder.status,
+            assigned_to_user_id=workorder.assigned_to_user_id,
+            assigned_to_name=assigned.display_name if assigned else None,
+            dispose_method=workorder.dispose_method,
+            updated_at=_to_str(workorder.updated_at) or "",
+            dispose_result=workorder.dispose_result,
+            closed_at=workorder.closed_at,
+            latest_alert_summary=alert.summary if alert else "",
+            actions=actions,
+        )
 
 
 def transition_workorder(
     workorder_id: str,
     payload: WorkorderTransitionRequest,
-    operator: UserProfile,
+    user: UserProfile,
 ) -> WorkorderDetail:
-    workorder = _get_workorder(workorder_id)
-    from_status = workorder["status"]
-    workorder["status"] = payload.to_status
-    workorder["updated_at"] = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    if payload.assigned_to_user_id is not None:
-        workorder["assigned_to_user_id"] = payload.assigned_to_user_id
-    if payload.dispose_method is not None:
-        workorder["dispose_method"] = payload.dispose_method
-    if payload.dispose_result is not None:
-        workorder["dispose_result"] = payload.dispose_result
-    if payload.to_status == "closed":
-        workorder["closed_at"] = workorder["updated_at"]
-
-    WORKORDER_ACTIONS.append(
-        {
-            "id": f"woa-{len(WORKORDER_ACTIONS) + 1:03d}",
-            "workorder_id": workorder_id,
-            "action_type": payload.action_type,
-            "operator_user_id": operator.user_id,
-            "from_status": from_status,
-            "to_status": payload.to_status,
-            "note": payload.note,
-            "created_at": workorder["updated_at"],
-        }
-    )
+    with session_scope() as session:
+        workorder = session.get(Workorder, workorder_id)
+        if not workorder:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
+        from_status = workorder.status
+        workorder.status = payload.to_status
+        workorder.assigned_to_user_id = payload.assigned_to_user_id or workorder.assigned_to_user_id
+        workorder.dispose_method = payload.dispose_method or workorder.dispose_method
+        workorder.dispose_result = payload.dispose_result or workorder.dispose_result
+        if payload.to_status == "closed":
+            workorder.closed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        session.add(
+            WorkorderAction(
+                workorder_id=workorder.id,
+                operator_user_id=user.user_id,
+                action_type=payload.action_type,
+                from_status=from_status,
+                to_status=payload.to_status,
+                note=payload.note,
+            )
+        )
+        session.flush()
     return get_workorder_detail(workorder_id)
 
 
 def list_risk_rules() -> list[RiskRuleItem]:
-    return [RiskRuleItem(**deepcopy(item)) for item in RISK_RULES]
+    with session_scope() as session:
+        rules = session.execute(select(RiskRule).order_by(RiskRule.priority.asc())).scalars().all()
+        return [
+            RiskRuleItem(
+                id=item.id,
+                code=item.code,
+                name=item.name,
+                scene=item.scene,
+                risk_level=item.risk_level,
+                priority=item.priority,
+                status=item.status,
+                trigger_expression=item.trigger_expression,
+                reason_template=item.reason_template or "",
+                suggestion_template=item.suggestion_template or "",
+            )
+            for item in rules
+        ]
 
 
 def list_contents() -> list[ContentItem]:
-    return [ContentItem(**deepcopy(item)) for item in CONTENTS]
+    with session_scope() as session:
+        templates = session.execute(select(PromptTemplate)).scalars().all()
+        educations = session.execute(select(EducationContent)).scalars().all()
+        contents = [
+            ContentItem(
+                id=item.id,
+                content_type="template",
+                code=item.code,
+                title=item.name,
+                category=item.category,
+                audience=None,
+                channel=item.channel,
+                status=item.status,
+                summary=item.notes,
+                updated_at=_to_str(item.updated_at) or "",
+            )
+            for item in templates
+        ]
+        contents.extend(
+            ContentItem(
+                id=item.id,
+                content_type="education",
+                code=None,
+                title=item.title,
+                category=item.category,
+                audience=item.audience,
+                channel="article",
+                status=item.publish_status,
+                summary=item.summary,
+                updated_at=_to_str(item.updated_at) or "",
+            )
+            for item in educations
+        )
+        return sorted(contents, key=lambda item: item.updated_at, reverse=True)
 
 
 def list_system_configs() -> list[SystemConfigItem]:
-    return [SystemConfigItem(**deepcopy(item)) for item in SYSTEM_CONFIGS]
-
-
-def get_paged_payload(items: list, page: int, page_size: int) -> dict:
-    raw_items = [item.model_dump() if hasattr(item, "model_dump") else item for item in items]
-    return _paginate(raw_items, page, page_size).model_dump()
-
-
-def sync_demo_users_from_auth_service() -> None:
-    for user in DEMO_USERS:
-        if user.user_id in USERS:
-            continue
-        USERS[user.user_id] = {
-            "user_id": user.user_id,
-            "username": user.username,
-            "display_name": user.display_name,
-            "phone": user.phone,
-            "status": "active",
-            "roles": list(user.roles),
-            "permissions": list(user.permissions),
-            "last_login_at": None,
-        }
-
-
-sync_demo_users_from_auth_service()
+    with session_scope() as session:
+        rows = session.execute(select(SystemConfig).order_by(SystemConfig.group.asc(), SystemConfig.key.asc())).scalars().all()
+        return [
+            SystemConfigItem(
+                key=item.key,
+                name=item.name,
+                value=item.value,
+                group=item.group,
+                description=item.description or "",
+            )
+            for item in rows
+        ]

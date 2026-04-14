@@ -1,89 +1,62 @@
-from dataclasses import dataclass
+from __future__ import annotations
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.constants.roles import UserRole
 from app.core.security import create_access_token
+from app.db.session import session_scope
+from app.models import User, UserRoleLink
 from app.schemas.auth import LoginResponse
 from app.schemas.user import UserProfile
+from app.services.db_init import ROLE_DETAILS
 
 
-@dataclass(frozen=True)
-class DemoUser:
-    user_id: str
-    username: str
-    password: str
-    display_name: str
-    phone: str
-    roles: list[UserRole]
-    permissions: list[str]
-
-
-DEMO_USERS = [
-    DemoUser(
-        user_id="u-elder-001",
-        username="elder_demo",
-        password="Elder123!",
-        display_name="李阿姨",
-        phone="138****1001",
-        roles=[UserRole.ELDER],
-        permissions=["elder:read", "sos:create"],
-    ),
-    DemoUser(
-        user_id="u-family-001",
-        username="family_demo",
-        password="Family123!",
-        display_name="王女士",
-        phone="139****2001",
-        roles=[UserRole.FAMILY],
-        permissions=["family:read", "alerts:read", "notifications:read"],
-    ),
-    DemoUser(
-        user_id="u-community-001",
-        username="community_demo",
-        password="Community123!",
-        display_name="社区网格员张强",
-        phone="137****3001",
-        roles=[UserRole.COMMUNITY],
-        permissions=["community:read", "workorder:read", "workorder:update"],
-    ),
-    DemoUser(
-        user_id="u-admin-001",
-        username="admin_demo",
-        password="Admin123!",
-        display_name="系统管理员",
-        phone="136****4001",
-        roles=[UserRole.ADMIN],
-        permissions=["*"],
-    ),
-]
+def _build_user_profile(user: User) -> UserProfile:
+    roles = [UserRole(link.role.code) for link in user.roles]
+    permissions: list[str] = []
+    for role in roles:
+        permissions.extend(ROLE_DETAILS[role]["permissions"])
+    unique_permissions = list(dict.fromkeys(str(item) for item in permissions))
+    return UserProfile(
+        user_id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        phone=user.phone,
+        roles=roles,
+        permissions=unique_permissions,
+    )
 
 
 def authenticate_user(username: str, password: str) -> LoginResponse:
-    matched_user = next(
-        (user for user in DEMO_USERS if user.username == username and user.password == password),
-        None,
-    )
-    if not matched_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
+    with session_scope() as session:
+        user = session.scalar(
+            select(User)
+            .options(selectinload(User.roles).selectinload(UserRoleLink.role))
+            .where(User.username == username)
         )
+        if not user or user.password_hash != password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户名或密码错误",
+            )
 
-    token, expires_at = create_access_token(
-        user_id=matched_user.user_id,
-        username=matched_user.username,
-        roles=[role.value for role in matched_user.roles],
-    )
-    return LoginResponse(
-        access_token=token,
-        refresh_token=f"refresh-{matched_user.user_id}",
-        expires_in=expires_at,
-        user_id=matched_user.user_id,
-        username=matched_user.username,
-        display_name=matched_user.display_name,
-        roles=matched_user.roles,
-    )
+        profile = _build_user_profile(user)
+        token, expires_at = create_access_token(
+            user_id=profile.user_id,
+            username=profile.username,
+            roles=[role.value for role in profile.roles],
+        )
+        return LoginResponse(
+            access_token=token,
+            refresh_token=f"refresh-{profile.user_id}",
+            expires_in=expires_at,
+            user_id=profile.user_id,
+            username=profile.username,
+            display_name=profile.display_name,
+            roles=profile.roles,
+        )
 
 
 def refresh_user_token(user: UserProfile) -> tuple[str, int]:
@@ -94,15 +67,13 @@ def refresh_user_token(user: UserProfile) -> tuple[str, int]:
     )
 
 
-def get_demo_user_by_id(user_id: str) -> UserProfile | None:
-    matched_user = next((user for user in DEMO_USERS if user.user_id == user_id), None)
-    if not matched_user:
-        return None
-    return UserProfile(
-        user_id=matched_user.user_id,
-        username=matched_user.username,
-        display_name=matched_user.display_name,
-        phone=matched_user.phone,
-        roles=matched_user.roles,
-        permissions=matched_user.permissions,
-    )
+def get_user_by_id(user_id: str) -> UserProfile | None:
+    with session_scope() as session:
+        user = session.scalar(
+            select(User)
+            .options(selectinload(User.roles).selectinload(UserRoleLink.role))
+            .where(User.id == user_id)
+        )
+        if not user:
+            return None
+        return _build_user_profile(user)

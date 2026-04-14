@@ -12,6 +12,21 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
+        "system_configs",
+        sa.Column("key", sa.String(length=100), nullable=False),
+        sa.Column("name", sa.String(length=100), nullable=False),
+        sa.Column("value", sa.Text(), nullable=False),
+        sa.Column("group", sa.String(length=50), nullable=False),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(op.f("ix_system_configs_group"), "system_configs", ["group"], unique=False)
+    op.create_index(op.f("ix_system_configs_key"), "system_configs", ["key"], unique=True)
+
+    op.create_table(
         "education_contents",
         sa.Column("title", sa.String(length=150), nullable=False),
         sa.Column("category", sa.String(length=30), nullable=False),
@@ -282,6 +297,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index(op.f("ix_system_configs_key"), table_name="system_configs")
+    op.drop_index(op.f("ix_system_configs_group"), table_name="system_configs")
+    op.drop_table("system_configs")
     op.drop_index(op.f("ix_workorder_actions_workorder_id"), table_name="workorder_actions")
     op.drop_index(op.f("ix_workorder_actions_operator_user_id"), table_name="workorder_actions")
     op.drop_table("workorder_actions")
