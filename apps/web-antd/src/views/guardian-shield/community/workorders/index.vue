@@ -17,10 +17,14 @@ import {
 } from 'ant-design-vue';
 
 import {
+  getCommunityWorkorderDetailApi,
   getCommunityWorkorderListApi,
   transitionCommunityWorkorderApi,
 } from '#/api';
-import type { CommunityWorkorderListItem } from '#/api';
+import type {
+  CommunityWorkorderDetail,
+  CommunityWorkorderListItem,
+} from '#/api';
 
 defineOptions({ name: 'CommunityWorkorders' });
 
@@ -28,7 +32,10 @@ const loading = ref(false);
 const rows = ref<CommunityWorkorderListItem[]>([]);
 const total = ref(0);
 const actionVisible = ref(false);
+const detailVisible = ref(false);
+const detailLoading = ref(false);
 const currentWorkorder = ref<CommunityWorkorderListItem | null>(null);
+const currentDetail = ref<CommunityWorkorderDetail | null>(null);
 
 const filters = reactive({
   keyword: '',
@@ -171,6 +178,17 @@ function openTransition(item: CommunityWorkorderListItem) {
   actionVisible.value = true;
 }
 
+async function openDetail(item: CommunityWorkorderListItem) {
+  currentWorkorder.value = item;
+  detailVisible.value = true;
+  detailLoading.value = true;
+  try {
+    currentDetail.value = await getCommunityWorkorderDetailApi(item.id);
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
 async function completeWorkorder() {
   if (!currentWorkorder.value) return;
   await transitionCommunityWorkorderApi(currentWorkorder.value.id, {
@@ -193,8 +211,7 @@ async function completeWorkorder() {
         <p class="eyebrow">社区端 / 协同处置</p>
         <h1>风险工单</h1>
         <p class="description">
-          当前页面已经接入真实 mock
-          工单数据，支持工单详情、状态流转展示和备注留痕，便于社区完整追踪每次处置。
+          当前页面已经接入真实工单数据，支持工单详情、状态流转展示和备注留痕，便于社区完整追踪每次处置。
         </p>
       </div>
       <div class="hero-note">
@@ -303,6 +320,11 @@ async function completeWorkorder() {
                   <p class="info-text">{{ getStatusLabel(item.status) }}</p>
                   <p class="info-subtext">当前责任人：{{ item.assignee }}</p>
                   <Button
+                    size="small"
+                    @click="openDetail(item)"
+                    >查看详情</Button
+                  >
+                  <Button
                     type="primary"
                     size="small"
                     @click="openTransition(item)"
@@ -335,6 +357,36 @@ async function completeWorkorder() {
         description="当前条件下暂无工单"
       />
     </Card>
+
+    <Modal
+      v-model:open="detailVisible"
+      title="工单详情"
+      cancel-text="关闭"
+      :footer="null"
+    >
+      <Card :bordered="false" :loading="detailLoading">
+        <template v-if="currentDetail">
+          <p><strong>工单编号：</strong>{{ currentDetail.workorderNo }}</p>
+          <p><strong>老人：</strong>{{ currentDetail.elderName }}</p>
+          <p><strong>标题：</strong>{{ currentDetail.title }}</p>
+          <p><strong>最新告警：</strong>{{ currentDetail.latestAlertSummary }}</p>
+          <p>
+            <strong>处置方式：</strong>{{ currentDetail.disposeMethod || '待补充' }}
+          </p>
+          <p>
+            <strong>处置结果：</strong>{{ currentDetail.disposeResult || '待补充' }}
+          </p>
+          <p><strong>流转记录：</strong></p>
+          <ul class="note-list">
+            <li v-for="action in currentDetail.actions" :key="action.id">
+              {{ action.createdAt }} · {{ action.operatorName }} ·
+              {{ action.fromStatus }} -> {{ action.toStatus }}
+              <span v-if="action.note"> · {{ action.note }}</span>
+            </li>
+          </ul>
+        </template>
+      </Card>
+    </Modal>
 
     <Modal
       v-model:open="actionVisible"

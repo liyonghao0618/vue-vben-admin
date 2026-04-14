@@ -14,7 +14,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { getFamilyNotificationListApi } from '#/api';
+import {
+  getFamilyNotificationListApi,
+  markFamilyNotificationReadApi,
+} from '#/api';
 import type { FamilyNotificationItem } from '#/api';
 
 defineOptions({ name: 'FamilyNotifications' });
@@ -94,6 +97,7 @@ const columns: TableColumnsType<FamilyNotificationItem> = [
   { dataIndex: 'notifiedAt', key: 'notifiedAt', title: '通知时间' },
   { dataIndex: 'result', key: 'result', title: '发送结果' },
   { dataIndex: 'status', key: 'status', title: '处置状态' },
+  { key: 'actions', title: '操作' },
 ];
 
 function getRiskMeta(level: FamilyNotificationItem['riskLevel']) {
@@ -133,6 +137,11 @@ async function loadRows() {
   }
 }
 
+async function handleMarkRead(notificationId: string) {
+  await markFamilyNotificationReadApi(notificationId);
+  await loadRows();
+}
+
 function handleSearch() {
   filters.page = 1;
   void loadRows();
@@ -165,8 +174,7 @@ onMounted(() => {
         <p class="eyebrow">子女端 / 通知中心</p>
         <h1>通知记录</h1>
         <p class="description">
-          当前页面已经接入真实 mock
-          通知记录，可查看通知渠道、送达结果、已读状态和后续跟进状态。
+          当前页面已经接入真实通知记录，可查看通知渠道、送达结果、已读状态和后续跟进状态，并支持直接标记已读。
         </p>
       </div>
     </section>
@@ -263,6 +271,16 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'status'">
             <Tag color="purple">{{ getStatusLabel(record.status) }}</Tag>
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <Button
+              size="small"
+              type="link"
+              :disabled="record.readStatus === 'read'"
+              @click="handleMarkRead(record.id)"
+            >
+              {{ record.readStatus === 'read' ? '已读' : '标记已读' }}
+            </Button>
           </template>
         </template>
       </Table>

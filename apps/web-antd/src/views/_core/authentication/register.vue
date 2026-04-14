@@ -6,13 +6,52 @@ import { computed, h, ref } from 'vue';
 
 import { AuthenticationRegister, z } from '@vben/common-ui';
 import { $t } from '@vben/locales';
+import { message } from 'ant-design-vue';
+
+import { registerApi } from '#/api';
 
 defineOptions({ name: 'Register' });
 
 const loading = ref(false);
 
+const roleOptions = [
+  { label: '老年用户', value: 'elder' },
+  { label: '子女用户', value: 'family' },
+  { label: '社区工作人员', value: 'community' },
+  { label: '系统管理员', value: 'admin' },
+] as const;
+
 const formSchema = computed((): VbenFormSchema[] => {
   return [
+    {
+      component: 'Select',
+      componentProps: {
+        options: roleOptions,
+        placeholder: '请选择身份',
+      },
+      defaultValue: 'elder',
+      fieldName: 'role',
+      label: '身份类型',
+      rules: z.string().min(1, { message: '请选择身份类型' }),
+    },
+    {
+      component: 'VbenInput',
+      componentProps: {
+        placeholder: '请输入姓名或昵称',
+      },
+      fieldName: 'displayName',
+      label: '姓名',
+      rules: z.string().min(1, { message: '请输入姓名' }),
+    },
+    {
+      component: 'VbenInput',
+      componentProps: {
+        placeholder: '请输入手机号',
+      },
+      fieldName: 'phone',
+      label: '手机号',
+      rules: z.string().min(6, { message: '请输入手机号' }),
+    },
     {
       component: 'VbenInput',
       componentProps: {
@@ -58,6 +97,15 @@ const formSchema = computed((): VbenFormSchema[] => {
       label: $t('authentication.confirmPassword'),
     },
     {
+      component: 'VbenInput',
+      componentProps: {
+        placeholder: '老年/子女/社区用户可填写邀请码',
+      },
+      fieldName: 'inviteCode',
+      help: '用于模拟“邀请码加入”流程，管理员可留空。',
+      label: '邀请码',
+    },
+    {
       component: 'VbenCheckbox',
       fieldName: 'agreePolicy',
       renderComponentContent: () => ({
@@ -81,8 +129,21 @@ const formSchema = computed((): VbenFormSchema[] => {
   ];
 });
 
-function handleSubmit(value: Recordable<any>) {
-  void value;
+async function handleSubmit(value: Recordable<any>) {
+  loading.value = true;
+  try {
+    await registerApi({
+      displayName: value.displayName,
+      inviteCode: value.inviteCode || undefined,
+      password: value.password,
+      phone: value.phone,
+      role: value.role,
+      username: value.username,
+    });
+    message.success('注册成功，请返回登录页使用新账号登录');
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 

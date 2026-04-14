@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -7,8 +9,8 @@ from sqlalchemy.orm import selectinload
 from app.constants.roles import UserRole
 from app.core.security import create_access_token
 from app.db.session import session_scope
-from app.models import User, UserRoleLink
-from app.schemas.auth import LoginResponse
+from app.models import Role, User, UserRoleLink
+from app.schemas.auth import LoginResponse, RegisterRequest, RegisterResponse
 from app.schemas.user import UserProfile
 from app.services.db_init import ROLE_DETAILS
 
@@ -56,6 +58,58 @@ def authenticate_user(username: str, password: str) -> LoginResponse:
             username=profile.username,
             display_name=profile.display_name,
             roles=profile.roles,
+        )
+
+
+def register_user(payload: RegisterRequest) -> RegisterResponse:
+    with session_scope() as session:
+        existing_user = session.scalar(
+            select(User).where(User.username == payload.username)
+        )
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="用户名已存在",
+            )
+        existing_phone = session.scalar(select(User).where(User.phone == payload.phone))
+        if existing_phone:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="手机号已存在",
+            )
+
+        target_role = session.scalar(select(Role).where(Role.code == payload.role.value))
+        if not target_role:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="角色不存在",
+            )
+
+        user = User(
+            id=f"u-{payload.role.value}-{uuid.uuid4().hex[:8]}",
+            username=payload.username,
+            password_hash=payload.password,
+            display_name=payload.display_name,
+            phone=payload.phone,
+            status="active",
+            is_verified=False,
+            notes=(f"invite_code={payload.invite_code}" if payload.invite_code else None),
+        )
+        session.add(user)
+        session.flush()
+        session.add(
+            UserRoleLink(
+                id=f"url-{user.id}-{payload.role.value}",
+                user_id=user.id,
+                role_id=target_role.id,
+            )
+        )
+        return RegisterResponse(
+            user_id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            phone=user.phone,
+            roles=[payload.role],
         )
 
 

@@ -85,13 +85,20 @@ docker compose down -v
 
 ## 已落地的业务 API
 
-- 认证：`/api/v1/auth/login`、`/logout`、`/refresh`、`/me`、`/roles`
+- 认证：`/api/v1/auth/login`、`/register`、`/logout`、`/refresh`、`/me`、`/roles`
 - 绑定关系：`/api/v1/bindings`
 - 风险识别：`/api/v1/risk-recognition/sms`、`/api/v1/risk-recognition/call`
 - 风险告警：`/api/v1/risk-alerts`
 - 通知记录：`/api/v1/notifications`
 - 社区重点老人和工单：`/api/v1/community/elders`、`/community/workorders`
 - 管理端：`/api/v1/admin/users`、`/roles`、`/rules`、`/contents`、`/system-config`
+
+另外，当前版本已补齐一批直接支撑 1-4 章业务联调的接口动作：
+
+- 老年端：一键求助、适老设置读取/保存、防骗知识库读取
+- 子女端：远程提醒发送、通知已读写回
+- 社区端：工单详情查询、工单流转写回
+- 管理端：风险规则新增/编辑、内容新增/编辑、系统配置保存
 
 其中风险识别接口已落地 V1 规则版闭环能力：
 

@@ -44,6 +44,30 @@ def test_auth_login_roles_and_refresh(client: TestClient) -> None:
     assert refresh_response.json()["data"]["token_type"] == "bearer"
 
 
+def test_auth_register_and_login(client: TestClient) -> None:
+    register_response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "elder_new_user",
+            "password": "Elder123!",
+            "display_name": "新注册老人",
+            "phone": "13800009999",
+            "role": "elder",
+            "invite_code": "ELDER-INVITE-001",
+        },
+    )
+    assert register_response.status_code == 200
+    body = register_response.json()["data"]
+    assert body["roles"] == ["elder"]
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "elder_new_user", "password": "Elder123!"},
+    )
+    assert login_response.status_code == 200
+    assert login_response.json()["data"]["display_name"] == "新注册老人"
+
+
 def test_family_bindings_alerts_and_notifications(client: TestClient) -> None:
     headers = auth_headers(client, "family_demo", "Family123!")
 

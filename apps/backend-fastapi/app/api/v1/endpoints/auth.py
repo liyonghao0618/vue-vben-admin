@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, Request
 
 from app.constants.roles import UserRole
 from app.core.deps import get_current_user, require_roles
-from app.schemas.auth import LoginRequest
+from app.schemas.auth import LoginRequest, RegisterRequest
 from app.schemas.business import LogoutResponse, RefreshTokenRequest, RefreshTokenResponse
 from app.schemas.common import ApiResponse, MetaPayload
 from app.schemas.user import UserProfile
-from app.services.auth import authenticate_user, refresh_user_token
+from app.services.auth import authenticate_user, refresh_user_token, register_user
 from app.services.business import list_roles
 
 router = APIRouter()
@@ -26,6 +26,12 @@ def response_meta(request: Request) -> MetaPayload:
 async def login(payload: LoginRequest, request: Request) -> ApiResponse:
     token_info = authenticate_user(payload.username, payload.password)
     return ApiResponse(data=token_info.model_dump(), meta=response_meta(request))
+
+
+@router.post("/register", summary="角色化注册", response_model=ApiResponse)
+async def register(payload: RegisterRequest, request: Request) -> ApiResponse:
+    data = register_user(payload)
+    return ApiResponse(data=data.model_dump(), meta=response_meta(request))
 
 
 @router.get("/me", summary="当前用户信息", response_model=ApiResponse)

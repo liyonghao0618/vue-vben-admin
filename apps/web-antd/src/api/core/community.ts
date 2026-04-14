@@ -69,6 +69,32 @@ export interface CommunitySeniorItem {
   riskLevel: 'high' | 'low' | 'medium';
 }
 
+export interface CommunityWorkorderActionItem {
+  actionType: string;
+  createdAt: string;
+  fromStatus: string;
+  id: string;
+  note?: string | null;
+  operatorName: string;
+  toStatus: string;
+}
+
+export interface CommunityWorkorderDetail {
+  actions: CommunityWorkorderActionItem[];
+  assignedToName?: string | null;
+  closedAt?: string | null;
+  disposeMethod?: string | null;
+  disposeResult?: string | null;
+  elderName: string;
+  id: string;
+  latestAlertSummary: string;
+  priority: 'high' | 'low' | 'medium';
+  status: string;
+  title: string;
+  updatedAt: string;
+  workorderNo: string;
+}
+
 export async function getCommunityOverviewApi() {
   const [elders, workorders] = await Promise.all([
     requestClient.get<any>('/community/elders', {
@@ -201,6 +227,35 @@ export async function getCommunityWorkorderListApi(
       ),
     total: result.pagination.total,
   };
+}
+
+export async function getCommunityWorkorderDetailApi(workorderId: string) {
+  const item = await requestClient.get<any>(`/community/workorders/${workorderId}`);
+  return {
+    actions: item.actions.map(
+      (action: any): CommunityWorkorderActionItem => ({
+        actionType: action.action_type,
+        createdAt: action.created_at,
+        fromStatus: action.from_status,
+        id: action.id,
+        note: action.note,
+        operatorName: action.operator_name,
+        toStatus: action.to_status,
+      }),
+    ),
+    assignedToName: item.assigned_to_name,
+    closedAt: item.closed_at,
+    disposeMethod: item.dispose_method,
+    disposeResult: item.dispose_result,
+    elderName: item.elder_name,
+    id: item.id,
+    latestAlertSummary: item.latest_alert_summary,
+    priority: item.priority,
+    status: item.status,
+    title: item.title,
+    updatedAt: item.updated_at,
+    workorderNo: item.workorder_no,
+  } satisfies CommunityWorkorderDetail;
 }
 
 export async function transitionCommunityWorkorderApi(

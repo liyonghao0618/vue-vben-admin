@@ -15,6 +15,15 @@ export namespace AuthApi {
   export interface RefreshTokenResult {
     accessToken: string;
   }
+
+  export interface RegisterParams {
+    displayName: string;
+    inviteCode?: string;
+    password: string;
+    phone: string;
+    role: 'admin' | 'community' | 'elder' | 'family';
+    username: string;
+  }
 }
 
 /**
@@ -27,6 +36,17 @@ export async function loginApi(data: AuthApi.LoginParams) {
   return {
     accessToken: result.access_token,
   };
+}
+
+export async function registerApi(data: AuthApi.RegisterParams) {
+  return requestClient.post('/auth/register', {
+    display_name: data.displayName,
+    invite_code: data.inviteCode,
+    password: data.password,
+    phone: data.phone,
+    role: data.role,
+    username: data.username,
+  });
 }
 
 /**
