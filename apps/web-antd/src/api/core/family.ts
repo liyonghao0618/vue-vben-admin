@@ -208,7 +208,7 @@ export async function getFamilyNotificationListApi(
               : item.channel === 'sms'
                 ? 'sms'
                 : 'app',
-          elderName: item.alert_title.includes('周叔叔') ? '周叔叔' : '李阿姨',
+          elderName: item.elder_name,
           id: item.id,
           notifiedAt: item.sent_at,
           operatorName: item.receiver_name,
@@ -220,7 +220,7 @@ export async function getFamilyNotificationListApi(
               : item.status === 'pending'
                 ? 'processing'
                 : 'delivered',
-          riskLevel: item.alert_title.includes('高风险') ? 'high' : 'medium',
+          riskLevel: item.risk_level,
           status: item.is_read ? 'closed' : 'pending',
         }),
       )

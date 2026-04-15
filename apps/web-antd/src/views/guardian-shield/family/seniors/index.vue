@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, reactive } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
   Button,
@@ -11,6 +11,12 @@ import {
   Space,
   Tag,
 } from 'ant-design-vue';
+
+import {
+  getBindingListApi,
+  getRiskAlertListApi,
+  type RiskAlertItem,
+} from '#/api';
 
 defineOptions({ name: 'FamilySeniors' });
 
@@ -25,48 +31,8 @@ interface SeniorItem {
   riskSummary: string;
 }
 
-const sourceRows: SeniorItem[] = [
-  {
-    bindStatus: '已绑定 128 天',
-    id: 'ELD-1',
-    lastAlert: '2026-04-14 09:12',
-    latestAlertTitle: '疑似冒充医保短信',
-    name: '王阿姨',
-    relation: '母亲',
-    riskLevel: 'high',
-    riskSummary: '今日出现高风险短信，建议优先电话核实。',
-  },
-  {
-    bindStatus: '已绑定 96 天',
-    id: 'ELD-2',
-    lastAlert: '2026-04-14 08:45',
-    latestAlertTitle: '疑似冒充公检法来电',
-    name: '周奶奶',
-    relation: '外婆',
-    riskLevel: 'high',
-    riskSummary: '正在处理中，社区已跟进。',
-  },
-  {
-    bindStatus: '已绑定 54 天',
-    id: 'ELD-3',
-    lastAlert: '2026-04-13 18:20',
-    latestAlertTitle: '疑似退款验证码套取',
-    name: '孙大爷',
-    relation: '父亲',
-    riskLevel: 'medium',
-    riskSummary: '已完成首次提醒，建议持续关注。',
-  },
-  {
-    bindStatus: '已绑定 41 天',
-    id: 'ELD-4',
-    lastAlert: '2026-04-12 16:36',
-    latestAlertTitle: '疑似熟人冒充来电',
-    name: '赵桂兰',
-    relation: '姑妈',
-    riskLevel: 'low',
-    riskSummary: '当前风险较低，可结合通话记录复查。',
-  },
-];
+const loading = ref(false);
+const sourceRows = ref<SeniorItem[]>([]);
 
 const filters = reactive({
   keyword: '',
@@ -74,7 +40,7 @@ const filters = reactive({
 });
 
 const rows = computed(() =>
-  sourceRows.filter((item) => {
+  sourceRows.value.filter((item) => {
     const hitKeyword =
       !filters.keyword ||
       [item.name, item.relation, item.latestAlertTitle, item.id]
@@ -91,11 +57,69 @@ function resetFilters() {
   filters.riskLevel = undefined;
 }
 
+function buildBindStatus(authorizedAt: string) {
+  const authorized = new Date(authorizedAt).getTime();
+  if (Number.isNaN(authorized)) {
+    return '已绑定';
+  }
+  const diffDays = Math.max(
+    Math.floor((Date.now() - authorized) / (1000 * 60 * 60 * 24)),
+    0,
+  );
+  return `已绑定 ${diffDays} 天`;
+}
+
+function buildRiskSummary(item?: {
+  hitReason: string;
+  riskLevel: SeniorItem['riskLevel'];
+  status: 'handled' | 'pending';
+}) {
+  if (!item) {
+    return '当前暂无风险事件，可继续保持日常关注。';
+  }
+  if (item.status === 'pending') {
+    return `最近有${getRiskMeta(item.riskLevel).text}事件，建议优先电话核实。`;
+  }
+  return `最近风险事件已处理，原因：${item.hitReason}`;
+}
+
+async function loadRows() {
+  loading.value = true;
+  try {
+    const [bindings, alerts] = await Promise.all([
+      getBindingListApi(),
+      getRiskAlertListApi({ page: 1, pageSize: 50 }),
+    ]);
+    const latestAlertMap = new Map<string, RiskAlertItem>(
+      alerts.items.map((item: RiskAlertItem) => [item.elderName, item] as const),
+    );
+    sourceRows.value = bindings.map((item) => {
+      const latestAlert = latestAlertMap.get(item.elderName);
+      return {
+        bindStatus: buildBindStatus(item.authorizedAt),
+        id: item.elderUserId,
+        lastAlert: latestAlert?.occurredAt || '暂无风险告警',
+        latestAlertTitle: latestAlert?.title || '近期暂无风险提醒',
+        name: item.elderName,
+        relation: item.relationshipType,
+        riskLevel: latestAlert?.riskLevel || 'low',
+        riskSummary: buildRiskSummary(latestAlert),
+      } satisfies SeniorItem;
+    });
+  } finally {
+    loading.value = false;
+  }
+}
+
 function getRiskMeta(level: SeniorItem['riskLevel']) {
   if (level === 'high') return { color: 'red', text: '高风险' };
   if (level === 'medium') return { color: 'orange', text: '中风险' };
   return { color: 'green', text: '低风险' };
 }
+
+onMounted(() => {
+  void loadRows();
+});
 </script>
 
 <template>
@@ -137,7 +161,7 @@ function getRiskMeta(level: SeniorItem['riskLevel']) {
       </Space>
     </Card>
 
-    <Row :gutter="[16, 16]" class="list-row">
+    <Row v-if="rows.length" :gutter="[16, 16]" class="list-row">
       <Col v-for="item in rows" :key="item.id" :lg="12" :span="24">
         <Card class="senior-card" :bordered="false">
           <div class="card-head">
@@ -161,6 +185,9 @@ function getRiskMeta(level: SeniorItem['riskLevel']) {
         </Card>
       </Col>
     </Row>
+    <Card v-else class="empty-card" :bordered="false" :loading="loading">
+      当前暂无已绑定老人数据。
+    </Card>
   </div>
 </template>
 
@@ -175,7 +202,8 @@ function getRiskMeta(level: SeniorItem['riskLevel']) {
 
 .hero-panel,
 .filter-card,
-.senior-card {
+.senior-card,
+.empty-card {
   background: rgb(255 255 255 / 96%);
   border: 1px solid rgb(244 63 94 / 14%);
   border-radius: 24px;

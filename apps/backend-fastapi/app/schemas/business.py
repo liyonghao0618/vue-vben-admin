@@ -119,6 +119,8 @@ class NotificationItem(BaseModel):
     receiver_name: str
     alert_id: str
     alert_title: str
+    elder_name: str
+    risk_level: str
     channel: str
     notification_type: str
     title: str

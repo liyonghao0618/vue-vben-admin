@@ -333,11 +333,19 @@ def get_risk_alert_detail(alert_id: str) -> RiskAlertDetail:
 
 def list_notifications(user: UserProfile, is_read: bool | None = None) -> list[NotificationItem]:
     ReceiverUser = aliased(User)
+    ElderUser = aliased(User)
     with session_scope() as session:
         query = (
-            select(NotificationRecord, ReceiverUser.display_name, RiskAlert.title)
+            select(
+                NotificationRecord,
+                ReceiverUser.display_name,
+                RiskAlert.title,
+                RiskAlert.risk_level,
+                ElderUser.display_name,
+            )
             .join(ReceiverUser, NotificationRecord.receiver_user_id == ReceiverUser.id)
             .join(RiskAlert, NotificationRecord.alert_id == RiskAlert.id)
+            .join(ElderUser, RiskAlert.elder_user_id == ElderUser.id)
             .where(NotificationRecord.receiver_user_id == user.user_id)
         )
         if is_read is not None:
@@ -350,6 +358,8 @@ def list_notifications(user: UserProfile, is_read: bool | None = None) -> list[N
                 receiver_name=receiver_name,
                 alert_id=item.alert_id,
                 alert_title=alert_title,
+                elder_name=elder_name,
+                risk_level=risk_level,
                 channel=item.channel,
                 notification_type=item.notification_type,
                 title=item.title,
@@ -358,7 +368,7 @@ def list_notifications(user: UserProfile, is_read: bool | None = None) -> list[N
                 is_read=item.is_read,
                 sent_at=item.sent_at or "",
             )
-            for item, receiver_name, alert_title in rows
+            for item, receiver_name, alert_title, risk_level, elder_name in rows
         ]
 
 
