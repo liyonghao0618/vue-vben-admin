@@ -75,11 +75,11 @@ onMounted(() => {
         <p class="eyebrow">老年端 / 首页</p>
         <h1>{{ latestAlert?.riskLevel === 'high' ? '先别慌，先不要转账' : '今天先看这三件事' }}</h1>
         <p class="description">
-          首页现在会直接展示真实风险提醒、家属绑定情况和当前适老设置，让老人进入系统后第一眼就知道有没有危险、下一步要做什么。
+          围绕“有没有危险、该先联系谁、现在要做什么”三件事组织首页信息，让老人进入系统后不用翻页面就能先做正确动作。
         </p>
       </div>
       <div class="hero-note">
-        <strong>语音与显示</strong>
+        <strong>今日提醒</strong>
         <span>{{ voiceTip }}</span>
       </div>
     </section>
@@ -157,7 +157,7 @@ onMounted(() => {
           <Card class="action-card" :bordered="false" title="马上操作">
             <Space direction="vertical" style="width: 100%">
               <Button block size="large" type="primary" @click="goTo('/elder/alerts')">查看风险提醒</Button>
-              <Button block size="large" @click="goTo('/elder/help')">一键求助</Button>
+              <Button block size="large" danger @click="goTo('/elder/help')">一键求助</Button>
               <Button block size="large" @click="goTo('/elder/family-binding')">联系家人</Button>
               <Button block size="large" @click="goTo('/elder/settings')">调整适老设置</Button>
             </Space>
