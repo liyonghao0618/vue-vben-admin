@@ -21,6 +21,9 @@ export const overridesPreferences = defineOverridesPreferences({
     defaultHomePath: '/elder/home',
     name: import.meta.env.VITE_APP_TITLE,
   },
+  logo: {
+    enable: false,
+  },
 });
 
 export const preferencesExtension =

@@ -28,7 +28,7 @@ const defaultPreferences: Preferences = {
     layout: 'sidebar-nav',
     locale: 'zh-CN',
     loginExpiredMode: 'page',
-    name: 'Vben Admin',
+    name: '桑榆智盾：AI反电诈守护系统',
     preferencesButtonPosition: 'auto',
     watermark: false,
     watermarkContent: '',
@@ -42,9 +42,9 @@ const defaultPreferences: Preferences = {
     styleType: 'normal',
   },
   copyright: {
-    companyName: 'Vben',
-    companySiteLink: 'https://www.vben.pro',
-    date: '2024',
+    companyName: '桑榆智盾',
+    companySiteLink: '',
+    date: '2026',
     enable: true,
     icp: '',
     icpLink: '',
@@ -66,7 +66,7 @@ const defaultPreferences: Preferences = {
   logo: {
     enable: true,
     fit: 'contain',
-    source: 'https://unpkg.com/@vbenjs/static-source@0.1.7/source/logo-v1.webp',
+    source: '',
   },
   navigation: {
     accordion: true,
