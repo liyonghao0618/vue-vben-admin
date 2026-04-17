@@ -49,7 +49,7 @@ watch(
       <UserDropdown
         :avatar
         :text="userStore.userInfo?.realName"
-        description="守护桑榆角色工作台"
+        description="桑榆智盾角色工作台"
         @logout="handleLogout"
       />
     </template>

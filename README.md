@@ -1,6 +1,6 @@
-# Guardian Shield
+# Silver Shield AI: Anti-Fraud Protection System
 
-Guardian Shield is a web project for anti-fraud protection of older adults. It connects elders, family members, community workers, and administrators in one coordinated workflow.
+Silver Shield AI is a web project for anti-fraud protection of older adults. It connects elders, family members, community workers, and administrators in one coordinated workflow.
 
 ## What This Project Does
 
@@ -50,7 +50,7 @@ pnpm build:antd
 
 ## Notes
 
-- This repository has been refocused from a scaffold project into the Guardian Shield competition project.
+- This repository has been refocused from a scaffold project into the Silver Shield AI competition project.
 - The current goal is to make the anti-fraud business flow clear, stable, and demo-ready.
 
 ## License

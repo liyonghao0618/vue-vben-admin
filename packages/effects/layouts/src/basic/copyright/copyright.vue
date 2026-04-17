@@ -12,9 +12,9 @@ defineOptions({
 });
 
 withDefaults(defineProps<Props>(), {
-  companyName: 'Vben Admin',
+  companyName: '桑榆智盾',
   companySiteLink: '',
-  date: '2024',
+  date: '2026',
   icp: '',
   icpLink: '',
 });
