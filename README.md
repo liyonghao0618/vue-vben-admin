@@ -17,8 +17,39 @@ Silver Shield AI is a web project for anti-fraud protection of older adults. It 
 
 - Frontend: `apps/web-antd`
 - Backend: `apps/backend-fastapi`
+- Independent AI API Service: `ai-api-service`
 - Requirements: [`需求文档.md`](./需求文档.md)
 - TODO: [`TODO.md`](./TODO.md)
+
+## Independent AI Service
+
+This repository now also contains an isolated anti-fraud AI service in [`ai-api-service`](./ai-api-service/).
+
+It is designed as a standalone service that:
+
+- lives at the repository root but does not depend on the monorepo packages
+- provides fraud-detection APIs for text, batch input, chat logs, suspicious links, and manual review
+- supports remote Qwen-compatible endpoints through local environment configuration
+- can fall back to rule-based detection when the remote model is unavailable or returns invalid structured output
+
+Key documents:
+
+- Module README: [`ai-api-service/README.md`](./ai-api-service/README.md)
+- Module TODO: [`ai-api-service/TODO.md`](./ai-api-service/TODO.md)
+
+Local configuration is expected in:
+
+```bash
+ai-api-service/.env.local
+```
+
+Main fields:
+
+```bash
+QWEN_BASE_URL=...
+QWEN_API_KEY=...
+QWEN_MODEL=...
+```
 
 ## Run Locally
 

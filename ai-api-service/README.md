@@ -158,6 +158,14 @@ ai-api-service/
 
 当前目录已经完成 `P0` 最小版本，可作为独立诈骗识别 API 服务启动运行，现阶段仍不参与现有项目构建与运行。详细开发拆解见 [TODO.md](/workspaces/vue-vben-admin/ai-api-service/TODO.md)。
 
+目前还已经完成远程 Qwen 兼容接口接入验证：
+
+- `.env.local` 可直接填写远程兼容地址与 API Key
+- 服务启动时会自动读取 `.env.local`
+- 已验证远程模型可实际返回结构化识别结果
+- 正常返回时会看到 `provider: "qwen"` 与 `fallbackUsed: false`
+- 当远程模型不可用或输出不合规时，仍会自动退回本地规则识别
+
 ## 当前已实现内容
 
 当前版本已经具备以下能力：
@@ -170,7 +178,8 @@ ai-api-service/
 - `POST /api/fraud-detect/link` 链接风险辅助分析接口
 - `POST /api/review` 人工复核接口
 - `Qwen` 优先的小模型配置入口，默认模型为 `Qwen2.5-1.5B-Instruct`
-- 未配置远程 Qwen 接口时的本地规则兜底
+- 支持远程 Qwen 兼容接口接入，并已验证可用
+- 未配置远程 Qwen 接口或远程输出异常时的本地规则兜底
 - 统一的 JSON 响应结构和基础参数校验
 - 基于内存的轻量限流能力
 - 可选的 Bearer Token 鉴权预留
@@ -236,6 +245,16 @@ QWEN_API_KEY=your_api_key_here
 npm start
 ```
 
+如果远程 Qwen 配置正确且模型返回了结构化 JSON，主接口返回里会包含类似字段：
+
+```json
+{
+  "provider": "qwen",
+  "fallbackUsed": false,
+  "decisionMode": "model+rules"
+}
+```
+
 ## 接口示例
 
 请求：
@@ -273,6 +292,28 @@ curl -X POST http://127.0.0.1:3001/api/fraud-detect \
 }
 ```
 
+远程 Qwen 生效时，响应会更接近下面这种形式：
+
+```json
+{
+  "data": {
+    "traceId": "generated-uuid",
+    "category": "impersonation-support",
+    "categoryLabel": "冒充客服或官方",
+    "evidence": ["我是平台客服", "立即点击链接", "提供短信验证码"],
+    "isFraud": true,
+    "reason": "冒充客服以账户解冻为由诱导点击链接并索要短信验证码。",
+    "riskLevel": "high",
+    "suggestion": "切勿点击陌生链接或提供验证码，请通过官方渠道核实身份并立即举报。",
+    "decisionMode": "model+rules",
+    "fallbackUsed": false,
+    "model": "your-qwen-model",
+    "promptVersion": "fraud-detect/v1",
+    "provider": "qwen"
+  }
+}
+```
+
 聊天记录分析请求：
 
 ```bash
@@ -301,7 +342,7 @@ curl -X POST http://127.0.0.1:3001/api/fraud-detect/link \
 - 展示模型固定为 `Qwen`
 - 默认模型名为 `Qwen2.5-1.5B-Instruct`
 - 如果配置了兼容 OpenAI 风格的远程 Qwen 接口，则优先调用模型
-- 如果没有配置远程接口，则自动退回本地规则识别
+- 如果没有配置远程接口，或远程模型未返回可解析的结构化 JSON，则自动退回本地规则识别
 
 这套策略适合当前 Codespaces 阶段的轻量开发与联调。
 

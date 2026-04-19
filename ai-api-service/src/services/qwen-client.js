@@ -1,10 +1,15 @@
 import { getEnv, isRemoteQwenEnabled } from '../config/env.js';
 import { buildFraudDetectionPrompt } from '../prompts/fraud-detect.js';
-import { safeJsonParse } from '../utils/json.js';
+import { safeStructuredJsonParse } from '../utils/json.js';
 
 function getChatUrl() {
   const env = getEnv();
-  return new URL(env.qwenChatPath, env.qwenBaseUrl).toString();
+  const baseUrl = env.qwenBaseUrl.replace(/\/+$/u, '');
+  const chatPath = env.qwenChatPath.startsWith('/')
+    ? env.qwenChatPath
+    : `/${env.qwenChatPath}`;
+
+  return `${baseUrl}${chatPath}`;
 }
 
 export async function detectFraudWithQwen(input) {
@@ -29,6 +34,9 @@ export async function detectFraudWithQwen(input) {
         }
       ],
       model: env.qwenModel,
+      response_format: {
+        type: 'json_object'
+      },
       temperature: 0.2
     }),
     headers: {
@@ -55,7 +63,7 @@ export async function detectFraudWithQwen(input) {
     };
   }
 
-  const parsed = safeJsonParse(content.trim());
+  const parsed = safeStructuredJsonParse(content.trim());
 
   if (!parsed.ok || !parsed.data || typeof parsed.data !== 'object') {
     return {
