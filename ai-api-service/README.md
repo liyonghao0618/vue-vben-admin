@@ -217,6 +217,25 @@ npm test
 cp .env.example .env
 ```
 
+当前仓库里也已经为你预留了本地填写位置：
+
+```bash
+ai-api-service/.env.local
+```
+
+你主要只需要填写这两个字段：
+
+```bash
+QWEN_BASE_URL=https://your-qwen-endpoint.example.com/v1
+QWEN_API_KEY=your_api_key_here
+```
+
+服务启动时会自动读取 `.env.local`，你填完后直接运行：
+
+```bash
+npm start
+```
+
 ## 接口示例
 
 请求：
