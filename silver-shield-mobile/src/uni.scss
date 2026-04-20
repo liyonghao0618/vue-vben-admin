@@ -1,0 +1,72 @@
+$ss-color-primary: #0f766e;
+$ss-color-primary-soft: #dff7f2;
+$ss-color-accent: #f59e0b;
+$ss-color-danger: #dc2626;
+$ss-color-bg: #f6f3ea;
+$ss-color-surface: #fffdf8;
+$ss-color-text: #16302b;
+$ss-color-subtext: #5f6f68;
+$ss-color-border: #d7d4c9;
+$ss-color-contrast-bg: #fffbea;
+$ss-color-contrast-surface: #ffffff;
+$ss-color-contrast-text: #111827;
+$ss-color-contrast-subtext: #334155;
+$ss-color-contrast-border: #0f172a;
+
+:root,
+page {
+  --ss-color-primary: #{$ss-color-primary};
+  --ss-color-primary-soft: #{$ss-color-primary-soft};
+  --ss-color-accent: #{$ss-color-accent};
+  --ss-color-danger: #{$ss-color-danger};
+  --ss-color-bg: #{$ss-color-bg};
+  --ss-color-surface: #{$ss-color-surface};
+  --ss-color-text: #{$ss-color-text};
+  --ss-color-subtext: #{$ss-color-subtext};
+  --ss-color-border: #{$ss-color-border};
+  --ss-font-scale: 1.18;
+  --ss-font-size-caption: calc(22rpx * var(--ss-font-scale));
+  --ss-font-size-body: calc(28rpx * var(--ss-font-scale));
+  --ss-font-size-subtitle: calc(32rpx * var(--ss-font-scale));
+  --ss-font-size-title: calc(40rpx * var(--ss-font-scale));
+  --ss-font-size-hero: calc(52rpx * var(--ss-font-scale));
+  --ss-touch-height: 104rpx;
+  --ss-button-radius: 24rpx;
+  --ss-card-radius: 30rpx;
+  --ss-shadow-soft: 0 18rpx 40rpx rgba(22, 48, 43, 0.08);
+  --ss-shadow-strong: 0 24rpx 56rpx rgba(153, 27, 27, 0.2);
+}
+
+:root[data-ss-contrast='true'] {
+  --ss-color-bg: #{$ss-color-contrast-bg};
+  --ss-color-surface: #{$ss-color-contrast-surface};
+  --ss-color-text: #{$ss-color-contrast-text};
+  --ss-color-subtext: #{$ss-color-contrast-subtext};
+  --ss-color-border: #{$ss-color-contrast-border};
+  --ss-color-primary: #065f46;
+  --ss-color-primary-soft: #d1fae5;
+  --ss-color-danger: #b91c1c;
+  --ss-shadow-soft: 0 0 0 3rpx rgba(15, 23, 42, 0.1);
+  --ss-shadow-strong: 0 0 0 4rpx rgba(185, 28, 28, 0.18);
+}
+
+page,
+view,
+text,
+button,
+input,
+textarea {
+  box-sizing: border-box;
+}
+
+button {
+  min-height: var(--ss-touch-height);
+}
+
+.ss-voice-anchor {
+  border: 2rpx dashed rgba(15, 118, 110, 0.3);
+}
+
+:root[data-ss-contrast='true'] .ss-voice-anchor {
+  border-color: rgba(15, 23, 42, 0.4);
+}
