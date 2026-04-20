@@ -96,21 +96,38 @@ docker compose down -v
 
 当前已进入 3.4 真实业务 API 联调阶段，内置演示账号用于验证鉴权、角色权限和业务接口：
 
-- `elder_demo / Elder123!`
-- `family_demo / Family123!`
-- `community_demo / Community123!`
-- `admin_demo / Admin123!`
+- `elder_demo / 111`
+- `family_demo / 111`
+- `community_demo / 111`
+- `admin_demo / 111`
 
 ## 已落地的业务 API
 
-- 认证：`/api/v1/auth/login`、`/logout`、`/refresh`、`/me`、`/roles`
+- 认证：`/api/v1/auth/login`、`/register`、`/logout`、`/refresh`、`/me`、`/roles`
 - 绑定关系：`/api/v1/bindings`
+- 风险识别：`/api/v1/risk-recognition/sms`、`/api/v1/risk-recognition/call`
 - 风险告警：`/api/v1/risk-alerts`
 - 通知记录：`/api/v1/notifications`
 - 社区重点老人和工单：`/api/v1/community/elders`、`/community/workorders`
 - 管理端：`/api/v1/admin/users`、`/roles`、`/rules`、`/contents`、`/system-config`
 
-这些接口当前使用内置演示数据服务返回稳定结构，适合前端联调、OpenAPI 演示和后续替换为数据库实现。
+另外，当前版本已补齐一批直接支撑 1-4 章业务联调的接口动作：
+
+- 老年端：一键求助、适老设置读取/保存、防骗知识库读取
+- 子女端：远程提醒发送、通知已读写回
+- 社区端：工单详情查询、工单流转写回
+- 管理端：风险规则新增/编辑、内容新增/编辑、系统配置保存
+- 通知中心：通知列表已补充 `elder_name` 与 `risk_level` 字段，便于前端去掉硬编码展示
+
+其中风险识别接口已落地 V1 规则版闭环能力：
+
+- 内置短信诈骗关键词词库与通话风险话术词库
+- 支持规则匹配、风险等级判定、命中优先级排序
+- 统一输出 `risk_level / hit_rule_codes / reason_detail / suggestion_action`
+- 自动写入短信或通话识别记录
+- 中高风险自动生成风险告警，高风险自动触发子女通知与社区工单
+
+其余接口当前使用数据库演示数据与稳定结构，适合前端联调、OpenAPI 演示和后续继续扩展为更完整业务实现。
 
 这意味着当前项目已经具备“真实数据库 + 迁移”的基础设施，但不是所有业务接口都已经改成数据库查询。
 
