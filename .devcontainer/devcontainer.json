@@ -1,5 +1,6 @@
 {
-  "postCreateCommand": "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ripgrep fd-find bat fzf jq tree ncdu lsof iproute2 procps netcat-openbsd dnsutils less unzip && sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd && sudo ln -sf /usr/bin/batcat /usr/local/bin/bat && sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/* && corepack enable && pnpm --version && python3 --version",
+  "name": "My Dev Container",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
   "customizations": {
     "vscode": {
       "extensions": [
