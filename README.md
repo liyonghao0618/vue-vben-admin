@@ -8,6 +8,7 @@ Silver Shield AI is a web project for anti-fraud protection of older adults. It 
 - Family portal: overview, elder list, alert details, notifications, remote reminders
 - Community portal: district overview, key elders, work orders, education management, reports
 - Admin portal: users, roles, risk rules, content management, system settings
+- Chat center: in-app real-time 1:1 chat across reachable users, with anti-fraud risk prompts during conversations
 
 ## Demo Flow
 
@@ -51,6 +52,26 @@ QWEN_API_KEY=...
 QWEN_MODEL=...
 ```
 
+## Chat MVP
+
+The repository now includes a first-phase in-app chat MVP aimed at instant communication plus anti-fraud intervention.
+
+Implemented in this round:
+
+- backend chat models for conversations, members, messages, unread state, and online presence
+- REST APIs for user search, conversation creation, conversation list/detail, message send, read receipt, unread summary, and online status
+- `WebSocket` channel for connect, ping/pong, typing, new message, and read events
+- frontend chat center page at `#/chat/index`
+- lightweight anti-fraud detection in the chat flow for suspicious links, verification-code requests, transfer guidance, and impersonation wording
+- UI placeholders for future image, voice, video, file, and call-entry expansion
+
+Current phase assumptions:
+
+- identity is carried by the existing logged-in user account
+- chat scope is any active user inside the same system
+- phase one supports direct 1:1 chat only
+- phase one supports text messages only, while the message schema reserves multi-modal extension fields
+
 ## Run Locally
 
 1. Install dependencies
@@ -75,7 +96,13 @@ source .venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. Build frontend
+4. Open the chat center after login
+
+```text
+/chat/index
+```
+
+5. Build frontend
 
 ```bash
 pnpm build:antd

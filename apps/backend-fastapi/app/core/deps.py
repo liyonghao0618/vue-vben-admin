@@ -19,6 +19,10 @@ def get_bearer_token(authorization: Annotated[str | None, Header()] = None) -> s
 
 
 def get_current_user(token: Annotated[str, Depends(get_bearer_token)]) -> UserProfile:
+    return get_current_user_from_token(token)
+
+
+def get_current_user_from_token(token: str) -> UserProfile:
     payload = decode_access_token(token)
     user = get_user_by_id(payload.sub)
     if not user:

@@ -9,6 +9,7 @@ pyproject.toml
 ./app/api/v1/endpoints/admin.py
 ./app/api/v1/endpoints/auth.py
 ./app/api/v1/endpoints/bindings.py
+./app/api/v1/endpoints/chats.py
 ./app/api/v1/endpoints/community.py
 ./app/api/v1/endpoints/docs.py
 ./app/api/v1/endpoints/elder.py
@@ -30,6 +31,7 @@ pyproject.toml
 ./app/db/session.py
 ./app/models/__init__.py
 ./app/models/binding.py
+./app/models/chat.py
 ./app/models/content.py
 ./app/models/mixins.py
 ./app/models/notification.py
@@ -39,10 +41,12 @@ pyproject.toml
 ./app/models/workorder.py
 ./app/schemas/auth.py
 ./app/schemas/business.py
+./app/schemas/chat.py
 ./app/schemas/common.py
 ./app/schemas/user.py
 ./app/services/auth.py
 ./app/services/business.py
+./app/services/chat.py
 ./app/services/db_init.py
 ./app/services/risk_recognition.py
 app/__init__.py

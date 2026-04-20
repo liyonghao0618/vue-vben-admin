@@ -3,6 +3,28 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     meta: {
+      icon: 'lucide:messages-square',
+      title: '聊天中心',
+      authority: ['elder', 'family', 'community', 'admin'],
+    },
+    name: 'ChatPortal',
+    path: '/chat',
+    children: [
+      {
+        name: 'ChatCenter',
+        path: '/chat/index',
+        component: () => import('#/views/guardian-shield/chat/index.vue'),
+        meta: {
+          affixTab: true,
+          authority: ['elder', 'family', 'community', 'admin'],
+          icon: 'lucide:message-circle-more',
+          title: '实时聊天',
+        },
+      },
+    ],
+  },
+  {
+    meta: {
       icon: 'lucide:heart-handshake',
       title: '老年端',
       authority: ['elder'],
