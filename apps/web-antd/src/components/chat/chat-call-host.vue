@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAccessStore, useUserStore } from '@vben/stores';
@@ -15,6 +15,7 @@ const userStore = useUserStore();
 const chatStore = useChatStore();
 const route = useRoute();
 const router = useRouter();
+const remoteAudioRef = ref<HTMLAudioElement | null>(null);
 
 function decodeJwtPayload(token: null | string) {
   if (!token) return null;
@@ -122,9 +123,41 @@ async function handleAcceptCall() {
 async function handleBackToCall() {
   await openChatForCall();
 }
+
+function handlePageHide() {
+  chatStore.flushActiveCallOnUnload('failed');
+}
+
+watch(
+  () => chatStore.remoteStream,
+  async (stream) => {
+    await nextTick();
+    if (!remoteAudioRef.value) {
+      return;
+    }
+    remoteAudioRef.value.srcObject = stream || null;
+    if (stream) {
+      try {
+        await remoteAudioRef.value.play();
+      } catch {}
+    }
+  },
+);
+
+onMounted(() => {
+  window.addEventListener('pagehide', handlePageHide);
+  window.addEventListener('beforeunload', handlePageHide);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pagehide', handlePageHide);
+  window.removeEventListener('beforeunload', handlePageHide);
+});
 </script>
 
 <template>
+  <audio ref="remoteAudioRef" autoplay playsinline class="call-audio"></audio>
+
   <Modal
     :open="isIncoming"
     :footer="null"
@@ -168,6 +201,10 @@ async function handleBackToCall() {
 </template>
 
 <style scoped>
+.call-audio {
+  display: none;
+}
+
 .incoming-modal {
   display: flex;
   flex-direction: column;

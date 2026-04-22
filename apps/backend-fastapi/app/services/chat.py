@@ -405,6 +405,61 @@ def _expire_stale_pending_calls(session, participant_user_ids: list[str]) -> Non
     session.flush()
 
 
+def end_disconnected_active_calls(user: UserProfile) -> list[CallSessionItem]:
+    with session_scope() as session:
+        calls = (
+            session.execute(
+                select(CallSession)
+                .where(
+                    CallSession.status == "accepted",
+                    or_(
+                        CallSession.initiator_user_id == user.user_id,
+                        CallSession.receiver_user_id == user.user_id,
+                    ),
+                )
+                .options(
+                    selectinload(CallSession.participants).selectinload(CallParticipant.user),
+                    selectinload(CallSession.events),
+                    selectinload(CallSession.conversation).selectinload(ChatConversation.members),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not calls:
+            return []
+
+        now = _now()
+        disconnected_calls: list[CallSessionItem] = []
+        for call in calls:
+            call.status = "failed"
+            call.ended_reason = "failed"
+            call.ended_at = now
+            if call.answered_at:
+                answered_dt = datetime.fromisoformat(call.answered_at.replace("Z", "+00:00"))
+                ended_dt = datetime.fromisoformat(call.ended_at.replace("Z", "+00:00"))
+                call.duration_seconds = max(int((ended_dt - answered_dt).total_seconds()), 0)
+            for participant in call.participants:
+                participant.left_at = now
+                if participant.join_state in {"invited", "joined", "ringing"}:
+                    participant.join_state = "left"
+            _append_call_event(
+                session,
+                call,
+                actor_user_id=user.user_id,
+                event_type="call.end",
+                data={"reason": "failed", "source": "disconnect"},
+            )
+            if not _has_call_summary_message(session, call):
+                _write_call_summary_message(session, call)
+            session.flush()
+            session.expire(call, ["conversation", "events", "participants"])
+            refreshed_call = _load_call_session(session, call.id)
+            assert refreshed_call is not None
+            disconnected_calls.append(_to_call_item(refreshed_call))
+        return disconnected_calls
+
+
 def search_chat_users(user: UserProfile, keyword: str | None = None, limit: int = 20) -> list[ChatUserSearchItem]:
     with session_scope() as session:
         blocked_subquery = select(ChatUserRelation.target_user_id).where(
@@ -1226,8 +1281,17 @@ async def websocket_loop(user: UserProfile, websocket: WebSocket) -> None:
         disconnected_at = _now()
         user_went_offline = manager.disconnect(user, connection_id)
         if user_went_offline:
+            disconnected_calls = end_disconnected_active_calls(user)
             await manager.broadcast_presence(
                 user.user_id,
                 is_online=False,
                 last_seen_at=disconnected_at,
             )
+            for call in disconnected_calls:
+                await manager.broadcast_to_conversation(
+                    call.conversation_id,
+                    {
+                        "event": "call.end",
+                        "data": call.model_dump(),
+                    },
+                )

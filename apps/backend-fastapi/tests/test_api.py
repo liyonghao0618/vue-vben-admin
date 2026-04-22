@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -397,6 +398,90 @@ def test_chat_call_can_recover_from_stale_pending_session(client: TestClient) ->
         assert expired_call.status == "timeout"
         assert expired_call.ended_reason == "timeout"
         assert expired_call.ended_at is not None
+
+
+def test_chat_call_disconnect_marks_active_session_failed(client: TestClient) -> None:
+    rate_limiter._events.clear()
+    admin_headers = auth_headers(client, "admin_demo", "111")
+    elder_headers = auth_headers(client, "elder_demo", "111")
+    admin_token = admin_headers["Authorization"].replace("Bearer ", "", 1)
+    elder_token = elder_headers["Authorization"].replace("Bearer ", "", 1)
+
+    conversation_response = client.post(
+        "/api/v1/chats/conversations",
+        headers=admin_headers,
+        json={"conversation_type": "direct", "participant_user_ids": ["u-elder-001"]},
+    )
+    assert conversation_response.status_code == 200
+    conversation_id = conversation_response.json()["data"]["id"]
+    existing_calls_response = client.get(
+        "/api/v1/chats/calls",
+        headers=admin_headers,
+        params={"conversation_id": conversation_id},
+    )
+    assert existing_calls_response.status_code == 200
+    for item in existing_calls_response.json()["data"]:
+        if item["status"] in {"accepted", "initiated", "ringing"}:
+            end_response = client.post(
+                f"/api/v1/chats/calls/{item['id']}/end",
+                headers=admin_headers,
+                json={"reason": "ended"},
+            )
+            assert end_response.status_code == 200
+
+    with client.websocket_connect(f"/api/v1/chats/ws?token={admin_token}") as admin_ws:
+        assert admin_ws.receive_json()["event"] == "connected"
+        with client.websocket_connect(f"/api/v1/chats/ws?token={elder_token}") as elder_ws:
+            assert elder_ws.receive_json()["event"] == "connected"
+
+            create_call_response = client.post(
+                "/api/v1/chats/calls",
+                headers=admin_headers,
+                json={"conversation_id": conversation_id, "call_type": "audio"},
+            )
+            assert create_call_response.status_code == 200
+            call_id = create_call_response.json()["data"]["id"]
+
+            offer_response = client.post(
+                "/api/v1/chats/calls/signal",
+                headers=admin_headers,
+                json={
+                    "event": "call.offer",
+                    "call_session_id": call_id,
+                    "data": {
+                        "call_session_id": call_id,
+                        "type": "offer",
+                        "sdp": "fake-offer-sdp",
+                    },
+                },
+            )
+            assert offer_response.status_code == 200
+
+            accept_response = client.post(
+                "/api/v1/chats/calls/signal",
+                headers=elder_headers,
+                json={
+                    "event": "call.accept",
+                    "call_session_id": call_id,
+                    "data": {"call_session_id": call_id},
+                },
+            )
+            assert accept_response.status_code == 200
+
+            elder_ws.close()
+
+        detail: dict[str, object] | None = None
+        for _ in range(10):
+            detail_response = client.get(f"/api/v1/chats/calls/{call_id}", headers=admin_headers)
+            assert detail_response.status_code == 200
+            detail = detail_response.json()["data"]
+            if detail["status"] == "failed":
+                break
+            time.sleep(0.05)
+
+        assert detail is not None
+        assert detail["status"] == "failed"
+        assert detail["ended_reason"] == "failed"
 
 
 def test_chat_blacklist_report_and_relationships(client: TestClient) -> None:

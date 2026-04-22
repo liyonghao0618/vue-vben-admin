@@ -43,6 +43,18 @@ function buildChatWsUrl(token: string) {
   return url.toString();
 }
 
+function buildCallEndUrl(callSessionId: string) {
+  const url = new URL(apiURL, window.location.origin);
+  url.pathname = `${url.pathname.replace(/\/$/, '')}/chats/calls/${callSessionId}/end`;
+  return url.toString();
+}
+
+function buildChatApiUrl(path: string) {
+  const url = new URL(apiURL, window.location.origin);
+  url.pathname = `${url.pathname.replace(/\/$/, '')}${path}`;
+  return url.toString();
+}
+
 type CallPhase =
   | 'accepting'
   | 'calling'
@@ -85,6 +97,9 @@ export const useChatStore = defineStore('chat', () => {
   let heartbeatTimer: null | ReturnType<typeof setInterval> = null;
   let reconnectTimer: null | ReturnType<typeof setTimeout> = null;
   let manualDisconnect = false;
+  let syncingActiveCall = false;
+  let lastUnloadCleanupCallId = '';
+  let endingCallId = '';
 
   const rtcConfig = computed(() => {
     const stunServers = (
@@ -211,6 +226,20 @@ export const useChatStore = defineStore('chat', () => {
     onlineStates.value = Object.fromEntries(rows.map((item) => [item.user_id, item]));
   }
 
+  function hasMediaSession() {
+    return !!peerConnection.value || !!localStream.value || !!remoteStream.value;
+  }
+
+  function isLiveCallStatus(status: string) {
+    return ['accepted', 'initiated', 'ringing'].includes(status);
+  }
+
+  function isCallInProgress() {
+    return ['accepting', 'calling', 'connected', 'incoming', 'reconnecting'].includes(
+      callPhase.value,
+    );
+  }
+
   function resetCallTimer() {
     if (callTimer) clearInterval(callTimer);
     callTimer = null;
@@ -250,6 +279,15 @@ export const useChatStore = defineStore('chat', () => {
     remoteStream.value?.getTracks().forEach((track) => track.stop());
     localStream.value = null;
     remoteStream.value = null;
+  }
+
+  function resetActiveCallState() {
+    clearMediaResources();
+    resetCallTimer();
+    activeCall.value = null;
+    callPhase.value = 'idle';
+    lastUnloadCleanupCallId = '';
+    endingCallId = '';
   }
 
   function scheduleReconnect() {
@@ -325,6 +363,74 @@ export const useChatStore = defineStore('chat', () => {
     return pc;
   }
 
+  async function requestChatApi<T>(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = 4000,
+  ) {
+    const token = accessStore.accessToken;
+    if (!token) {
+      return null;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(buildChatApiUrl(path), {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...(init.headers || {}),
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = await response.json();
+      return (payload?.data ?? null) as null | T;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function syncActiveCallState() {
+    if (syncingActiveCall) {
+      return;
+    }
+    syncingActiveCall = true;
+    try {
+      const calls = await requestChatApi<CallSessionItem[]>('/chats/calls');
+      if (!calls) {
+        return;
+      }
+      const liveCall = calls.find((item) => isLiveCallStatus(item.status));
+      if (!liveCall) {
+        if (!hasMediaSession() && !isCallInProgress()) {
+          activeCall.value = null;
+          callPhase.value = 'idle';
+        }
+        return;
+      }
+      if (liveCall.status === 'accepted' && !hasMediaSession()) {
+        await requestChatApi(`/chats/calls/${liveCall.id}/end`, {
+          method: 'POST',
+          body: JSON.stringify({ reason: 'failed' }),
+        });
+        resetActiveCallState();
+        callError.value = '';
+        return;
+      }
+      if (!hasMediaSession()) {
+        hydrateCallState(liveCall);
+      }
+    } finally {
+      syncingActiveCall = false;
+    }
+  }
+
   async function startCall(callType: 'audio' | 'video') {
     if (!currentConversation.value) return;
     if (activeCall.value && ['calling', 'connected', 'incoming'].includes(callPhase.value)) {
@@ -349,9 +455,7 @@ export const useChatStore = defineStore('chat', () => {
       });
       await loadConversations();
     } catch (error: any) {
-      clearMediaResources();
-      activeCall.value = null;
-      callPhase.value = 'idle';
+      resetActiveCallState();
       callError.value = error?.message || '发起通话失败，请稍后重试。';
     }
   }
@@ -427,18 +531,30 @@ export const useChatStore = defineStore('chat', () => {
     await endCurrentCall(reason);
   }
 
-  async function endCurrentCall(reason: 'busy' | 'cancelled' | 'ended' | 'failed' | 'rejected' | 'timeout' = 'ended') {
+  async function endCurrentCall(
+    reason: 'busy' | 'cancelled' | 'ended' | 'failed' | 'rejected' | 'timeout' = 'ended',
+    options: { notifyServer?: boolean } = {},
+  ) {
     const callId = activeCall.value?.id;
+    if (callId && endingCallId === callId) {
+      return;
+    }
     if (callId) {
-      try {
-        await endCallSessionApi(callId, reason);
-      } catch {}
+      endingCallId = callId;
+      if (options.notifyServer !== false) {
+        try {
+          await endCallSessionApi(callId, reason);
+        } catch {}
+      }
     }
     clearMediaResources();
     callPhase.value = 'ended';
     setTimeout(() => {
       callPhase.value = 'idle';
       activeCall.value = null;
+      if (endingCallId === callId) {
+        endingCallId = '';
+      }
     }, 1200);
     resetCallTimer();
     if (currentConversation.value) {
@@ -446,6 +562,30 @@ export const useChatStore = defineStore('chat', () => {
       callHistory.value = await getCallHistoryApi(currentConversation.value.id);
       await loadConversations();
     }
+    if (!callId) {
+      endingCallId = '';
+    }
+  }
+
+  function flushActiveCallOnUnload(reason: 'ended' | 'failed' = 'failed') {
+    const callId = activeCall.value?.id;
+    const token = accessStore.accessToken;
+    if (!callId || !token || !isCallInProgress()) {
+      return;
+    }
+    if (lastUnloadCleanupCallId === callId) {
+      return;
+    }
+    lastUnloadCleanupCallId = callId;
+    void fetch(buildCallEndUrl(callId), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reason }),
+      keepalive: true,
+    }).catch(() => {});
   }
 
   function toggleAudio() {
@@ -545,6 +685,7 @@ export const useChatStore = defineStore('chat', () => {
       } as const;
       await endCurrentCall(
         endReasonMap[event as keyof typeof endReasonMap],
+        { notifyServer: false },
       );
     }
   }
@@ -562,6 +703,7 @@ export const useChatStore = defineStore('chat', () => {
       startHeartbeat(ws);
       ws.send(JSON.stringify({ event: 'ping' }));
       void refreshOnlineStates();
+      void syncActiveCallState();
     });
     ws.addEventListener('message', async (event) => {
       const payload = JSON.parse(event.data);
@@ -625,8 +767,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function $reset() {
     disconnectWs();
-    clearMediaResources();
-    resetCallTimer();
+    resetActiveCallState();
     conversations.value = [];
     currentConversation.value = null;
     recommendedContacts.value = [];
@@ -637,7 +778,6 @@ export const useChatStore = defineStore('chat', () => {
     sending.value = false;
     callHistory.value = [];
     activeCall.value = null;
-    callPhase.value = 'idle';
     callError.value = '';
     localAudioEnabled.value = true;
     localVideoEnabled.value = false;
@@ -670,6 +810,7 @@ export const useChatStore = defineStore('chat', () => {
     currentConversation,
     disconnectWs,
     endCurrentCall,
+    flushActiveCallOnUnload,
     loadConversations,
     localAudioEnabled,
     localStream,

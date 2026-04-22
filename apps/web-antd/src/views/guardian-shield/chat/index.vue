@@ -327,6 +327,7 @@ onMounted(async () => {
                 <video
                   ref="remoteVideoRef"
                   autoplay
+                  muted
                   playsinline
                   class="remote-video"
                 ></video>
