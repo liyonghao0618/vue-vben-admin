@@ -11,6 +11,7 @@ BACKEND_PORT="${APP_PORT:-8000}"
 
 FRONTEND_PID=""
 BACKEND_PID=""
+PNPM_CMD=()
 
 log() {
   printf '[setup] %s\n' "$1"
@@ -50,12 +51,12 @@ require_command() {
 
 port_in_use() {
   local port="$1"
-  ss -ltn "( sport = :$port )" | grep -q ":$port"
+  [[ -n "$(port_pids "$port")" ]]
 }
 
 print_port_owner() {
   local port="$1"
-  ss -ltnp | grep -E ":${port}\b" || true
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
 }
 
 port_pids() {
@@ -117,9 +118,16 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-require_command pnpm "install pnpm >= 10"
+if command -v pnpm >/dev/null 2>&1; then
+  PNPM_CMD=(pnpm)
+elif command -v corepack >/dev/null 2>&1; then
+  PNPM_CMD=(corepack pnpm)
+else
+  fail "Missing required command: pnpm or corepack (install pnpm >= 10)"
+fi
 require_command python3 "install Python 3.12+"
 require_command docker "install Docker"
+require_command lsof "install lsof"
 
 if docker compose version >/dev/null 2>&1; then
   DOCKER_COMPOSE=(docker compose)
@@ -145,7 +153,7 @@ release_port "$FRONTEND_PORT" "Frontend"
 
 log "Installing frontend dependencies"
 cd "$ROOT_DIR"
-pnpm install
+"${PNPM_CMD[@]}" install
 
 log "Starting PostgreSQL with Docker Compose"
 "${DOCKER_COMPOSE[@]}" up -d postgres
@@ -179,7 +187,7 @@ BACKEND_PID=$!
 log "Starting frontend"
 (
   cd "$ROOT_DIR"
-  pnpm dev:antd -- --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
+  "${PNPM_CMD[@]}" dev:antd -- --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort
 ) &
 FRONTEND_PID=$!
 

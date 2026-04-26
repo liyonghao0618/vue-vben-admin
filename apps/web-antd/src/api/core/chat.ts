@@ -224,6 +224,55 @@ export async function sendCallSignalApi(
   });
 }
 
+export interface CallAudioRecognitionResult {
+  alert_id?: null | string;
+  hit_rule_codes: string[];
+  hit_terms: string[];
+  notification_ids: string[];
+  reason_detail: string;
+  record_id: string;
+  risk_level: 'high' | 'low' | 'medium' | string;
+  risk_score: number;
+  scene: string;
+  suggestion_action: string;
+  workorder_id?: null | string;
+}
+
+export async function uploadCallAudioRecognitionApi(payload: {
+  audioFile: Blob;
+  callSessionId?: null | string;
+  callerNumber?: null | string;
+  durationSeconds?: number;
+  elderUserId: string;
+  filename?: string;
+  occurredAt?: null | string;
+}) {
+  const formData = new FormData();
+  formData.append(
+    'audio_file',
+    payload.audioFile,
+    payload.filename || 'call-audio.webm',
+  );
+  formData.append('elder_user_id', payload.elderUserId);
+  if (payload.callSessionId) formData.append('call_session_id', payload.callSessionId);
+  if (payload.callerNumber) formData.append('caller_number', payload.callerNumber);
+  if (typeof payload.durationSeconds === 'number') {
+    formData.append('duration_seconds', String(payload.durationSeconds));
+  }
+  if (payload.occurredAt) formData.append('occurred_at', payload.occurredAt);
+
+  return requestClient.post<CallAudioRecognitionResult>(
+    '/risk-recognition/call-audio',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 240_000,
+    },
+  );
+}
+
 export interface CallSignalEventRequest {
   event:
     | 'call.accept'

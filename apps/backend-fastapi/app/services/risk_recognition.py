@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.db.session import session_scope
 from app.models import (
     ElderFamilyBinding,
@@ -23,6 +29,13 @@ from app.models import (
 
 RISK_LEVEL_SCORE = {"low": 30, "medium": 65, "high": 90}
 RISK_LEVEL_PRIORITY = {"low": 1, "medium": 2, "high": 3}
+AUDIO_GUARD_RULE_CODE = "AI_AUDIO_MODEL"
+AUDIO_GUARD_MIN_DURATION_SECONDS = 60
+AUDIO_FRAUD_RESULT_TO_RISK_LEVEL = {
+    "非诈骗": "low",
+    "疑似诈骗": "medium",
+    "诈骗": "high",
+}
 
 DEFAULT_LEXICON_TERMS = [
     {"term": "验证码", "category": "sms_keyword", "scene": "sms", "risk_level": "high", "notes": "短信验证码索取高危词"},
@@ -275,6 +288,93 @@ def _build_suggestion(hit_rules: list[MatchedRule], risk_level: str) -> str:
     return "目前未发现明显高危特征，仍建议保持警惕，不点击陌生链接。"
 
 
+def _audio_result_to_score(risk_level: str, confidence: float) -> int:
+    base_score = RISK_LEVEL_SCORE[risk_level]
+    if risk_level == "low":
+        return min(49, max(10, int(base_score + confidence * 10)))
+    if risk_level == "medium":
+        return min(79, max(50, int(base_score + confidence * 10)))
+    return min(99, max(80, int(base_score + confidence * 9)))
+
+
+def _extract_json_object(text: str) -> dict:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("模型输出中未找到 JSON 对象")
+    data = json.loads(text[start : end + 1])
+    if not isinstance(data, dict):
+        raise ValueError("模型输出 JSON 不是对象")
+    return data
+
+
+def _build_audio_fallback_result(reason: str) -> dict:
+    return {
+        "fraud_result": "疑似诈骗",
+        "risk_level": "中",
+        "has_fraud_evidence": False,
+        "confidence": 0.0,
+        "high_risk_behaviors": [],
+        "evidence": [],
+        "reason": f"模型分析失败，进入人工复核：{reason}",
+        "suggestion": "记录但不通知家属",
+    }
+
+
+def _run_audio_guard_script(audio_path: str) -> dict:
+    settings = get_settings()
+    if not settings.audio_guard_enabled:
+        return _build_audio_fallback_result("音频模型服务未启用")
+
+    script_path = Path(settings.audio_guard_script_path)
+    if not script_path.exists():
+        return _build_audio_fallback_result(f"未找到推理脚本 {script_path}")
+    if not os.access(script_path, os.X_OK):
+        return _build_audio_fallback_result(f"推理脚本不可执行 {script_path}")
+
+    try:
+        completed = subprocess.run(
+            [str(script_path), audio_path],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=settings.audio_guard_timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return _build_audio_fallback_result("推理脚本执行超时")
+    except Exception as exc:
+        return _build_audio_fallback_result(str(exc))
+
+    if completed.returncode != 0:
+        detail = completed.stderr.strip().splitlines()[-1:] or ["推理脚本执行失败"]
+        return _build_audio_fallback_result(detail[0])
+
+    try:
+        return _extract_json_object(completed.stdout)
+    except Exception as exc:
+        return _build_audio_fallback_result(str(exc))
+
+
+def _normalize_audio_result(model_result: dict) -> tuple[str, int, list[str], str, str, str]:
+    fraud_result = str(model_result.get("fraud_result") or "疑似诈骗")
+    risk_level = AUDIO_FRAUD_RESULT_TO_RISK_LEVEL.get(fraud_result, "medium")
+    try:
+        confidence = float(model_result.get("confidence", 0.0))
+    except Exception:
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    raw_behaviors = model_result.get("high_risk_behaviors")
+    hit_terms = [str(item) for item in raw_behaviors] if isinstance(raw_behaviors, list) else []
+    raw_evidence = model_result.get("evidence")
+    evidence = [str(item) for item in raw_evidence] if isinstance(raw_evidence, list) else []
+    reason = str(model_result.get("reason") or "模型未返回明确解释。")
+    suggestion = str(model_result.get("suggestion") or _build_suggestion([], risk_level))
+    evidence_detail = f"；关键证据：{'；'.join(evidence[:5])}" if evidence else ""
+    reason_detail = f"音频模型判定：{fraud_result}；置信度：{confidence:.2f}；{reason}{evidence_detail}"
+    return risk_level, _audio_result_to_score(risk_level, confidence), hit_terms, reason_detail, suggestion, fraud_result
+
+
 def _get_family_receivers(session, elder_user_id: str) -> list[User]:
     family_ids = session.scalars(
         select(ElderFamilyBinding.family_user_id).where(
@@ -364,7 +464,7 @@ def _create_alert_related_records(
                 alert_id=alert.id,
                 elder_user_id=elder.id,
                 assigned_to_user_id=community_user.id,
-                workorder_no=f"GD{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}{elder.id[-3:]}",
+                workorder_no=f"GD{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}{elder.id[-3:]}{alert.id[:6]}",
                 title=f"{elder.display_name}{title}处置工单",
                 priority="high",
                 status="pending",
@@ -383,6 +483,7 @@ def _create_alert_related_records(
                 )
             )
 
+    session.flush()
     return alert, notifications, workorder
 
 
@@ -500,6 +601,115 @@ def recognize_call(
             "risk_level": risk_level,
             "risk_score": risk_score,
             "hit_rule_codes": [rule.code for rule in hit_rules],
+            "hit_terms": hit_terms,
+            "reason_detail": reason_detail,
+            "suggestion_action": suggestion_action,
+            "alert_id": alert.id if alert else None,
+            "notification_ids": [item.id for item in notifications],
+            "workorder_id": workorder.id if workorder else None,
+        }
+
+
+def recognize_call_audio(
+    *,
+    elder_user_id: str,
+    audio_content: bytes,
+    filename: str,
+    call_session_id: str | None = None,
+    caller_number: str | None = None,
+    duration_seconds: int | None = None,
+    occurred_at: str | None = None,
+) -> dict:
+    occurred_at = occurred_at or _now_iso()
+
+    if duration_seconds is not None and duration_seconds < AUDIO_GUARD_MIN_DURATION_SECONDS:
+        reason_detail = "通话时长不足 60 秒，按隐私最小化策略不上传模型分析，当前判定为低风险。"
+        suggestion_action = "短通话已跳过云端分析，无需触发提醒。"
+        with session_scope() as session:
+            elder = _ensure_elder_exists(session, elder_user_id)
+            record = CallRecognitionRecord(
+                elder_user_id=elder.id,
+                caller_number=caller_number,
+                transcript_text=f"[call_session_id={call_session_id or 'unknown'}] 短通话未进行音频模型分析",
+                transcript_summary="短通话未上传分析",
+                duration_seconds=duration_seconds,
+                risk_level="low",
+                risk_score=RISK_LEVEL_SCORE["low"],
+                hit_rule_codes="",
+                hit_terms="",
+                analysis_summary=reason_detail,
+                suggestion_action=suggestion_action,
+                occurred_at=occurred_at,
+            )
+            session.add(record)
+            session.flush()
+            return {
+                "scene": "call_audio",
+                "record_id": record.id,
+                "risk_level": "low",
+                "risk_score": RISK_LEVEL_SCORE["low"],
+                "hit_rule_codes": [],
+                "hit_terms": [],
+                "reason_detail": reason_detail,
+                "suggestion_action": suggestion_action,
+                "alert_id": None,
+                "notification_ids": [],
+                "workorder_id": None,
+            }
+
+    suffix = Path(filename).suffix or ".webm"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="guard-call-audio-") as temp_file:
+            temp_file.write(audio_content)
+            temp_path = temp_file.name
+        model_result = _run_audio_guard_script(temp_path)
+    finally:
+        if temp_path:
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    risk_level, risk_score, hit_terms, reason_detail, suggestion_action, fraud_result = _normalize_audio_result(model_result)
+
+    with session_scope() as session:
+        elder = _ensure_elder_exists(session, elder_user_id)
+        record = CallRecognitionRecord(
+            elder_user_id=elder.id,
+            caller_number=caller_number,
+            transcript_text=f"[call_session_id={call_session_id or 'unknown'}] 音频模型分析结果：{fraud_result}",
+            transcript_summary=reason_detail[:200],
+            duration_seconds=duration_seconds,
+            risk_level=risk_level,
+            risk_score=risk_score,
+            hit_rule_codes=AUDIO_GUARD_RULE_CODE,
+            hit_terms=",".join(hit_terms),
+            analysis_summary=reason_detail,
+            suggestion_action=suggestion_action,
+            occurred_at=occurred_at,
+        )
+        session.add(record)
+        session.flush()
+        alert, notifications, workorder = _create_alert_related_records(
+            session,
+            elder=elder,
+            source_type="call",
+            source_record_id=record.id,
+            risk_level=risk_level,
+            risk_score=risk_score,
+            reason_detail=reason_detail,
+            suggestion_action=suggestion_action,
+            occurred_at=occurred_at,
+            title="AI通话反诈分析",
+            summary=f"通话录音经 AI 模型判定为{fraud_result}，请及时核实。",
+        )
+        return {
+            "scene": "call_audio",
+            "record_id": record.id,
+            "risk_level": risk_level,
+            "risk_score": risk_score,
+            "hit_rule_codes": [AUDIO_GUARD_RULE_CODE],
             "hit_terms": hit_terms,
             "reason_detail": reason_detail,
             "suggestion_action": suggestion_action,

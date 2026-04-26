@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -51,6 +52,12 @@ class Settings(BaseSettings):
     call_turn_url: str | None = Field(default=None, alias="CALL_TURN_URL")
     call_turn_username: str | None = Field(default=None, alias="CALL_TURN_USERNAME")
     call_turn_password: str | None = Field(default=None, alias="CALL_TURN_PASSWORD")
+    audio_guard_enabled: bool = Field(default=True, alias="AUDIO_GUARD_ENABLED")
+    audio_guard_script_path: str = Field(
+        default=str(Path(__file__).resolve().parents[4] / "read_audio_guard_improved.sh"),
+        alias="AUDIO_GUARD_SCRIPT_PATH",
+    )
+    audio_guard_timeout_seconds: int = Field(default=180, alias="AUDIO_GUARD_TIMEOUT_SECONDS")
 
 
 @lru_cache

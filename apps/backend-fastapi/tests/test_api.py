@@ -175,6 +175,162 @@ def test_risk_recognition_call_creates_structured_result(client: TestClient) -> 
     assert data["reason_detail"]
 
 
+def test_risk_recognition_call_audio_short_call_skips_model(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import risk_recognition
+
+    def fail_if_called(_: str) -> dict:
+        raise AssertionError("short call should not invoke audio model")
+
+    monkeypatch.setattr(risk_recognition, "_run_audio_guard_script", fail_if_called)
+    headers = auth_headers(client, "elder_demo", "111")
+
+    response = client.post(
+        "/api/v1/risk-recognition/call-audio",
+        headers=headers,
+        data={
+            "elder_user_id": "u-elder-001",
+            "call_session_id": "call-short-demo",
+            "duration_seconds": "30",
+        },
+        files={"audio_file": ("short.webm", b"fake audio", "audio/webm")},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["scene"] == "call_audio"
+    assert data["risk_level"] == "low"
+    assert data["alert_id"] is None
+
+
+def test_risk_recognition_call_audio_safe_result_creates_record_only(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import risk_recognition
+
+    monkeypatch.setattr(
+        risk_recognition,
+        "_run_audio_guard_script",
+        lambda _: {
+            "fraud_result": "非诈骗",
+            "confidence": 0.86,
+            "high_risk_behaviors": [],
+            "evidence": ["普通聊天内容"],
+            "reason": "未听到转账、验证码或陌生链接等高危动作。",
+            "suggestion": "不触发提醒",
+        },
+    )
+    headers = auth_headers(client, "elder_demo", "111")
+
+    response = client.post(
+        "/api/v1/risk-recognition/call-audio",
+        headers=headers,
+        data={
+            "elder_user_id": "u-elder-001",
+            "call_session_id": "call-safe-demo",
+            "duration_seconds": "90",
+        },
+        files={"audio_file": ("safe.webm", b"fake audio", "audio/webm")},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["risk_level"] == "low"
+    assert data["hit_rule_codes"] == ["AI_AUDIO_MODEL"]
+    assert data["alert_id"] is None
+
+
+def test_risk_recognition_call_audio_suspicious_creates_alert(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import risk_recognition
+
+    monkeypatch.setattr(
+        risk_recognition,
+        "_run_audio_guard_script",
+        lambda _: {
+            "fraud_result": "疑似诈骗",
+            "confidence": 0.72,
+            "high_risk_behaviors": ["要求下载陌生App/添加微信"],
+            "evidence": ["请添加微信继续处理"],
+            "reason": "出现陌生渠道引导，但转账证据不足。",
+            "suggestion": "记录但不通知家属",
+        },
+    )
+    headers = auth_headers(client, "elder_demo", "111")
+
+    response = client.post(
+        "/api/v1/risk-recognition/call-audio",
+        headers=headers,
+        data={
+            "elder_user_id": "u-elder-001",
+            "call_session_id": "call-suspicious-demo",
+            "duration_seconds": "90",
+        },
+        files={"audio_file": ("suspicious.webm", b"fake audio", "audio/webm")},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["risk_level"] == "medium"
+    assert data["alert_id"] is not None
+    assert len(data["notification_ids"]) >= 1
+
+
+def test_risk_recognition_call_audio_fraud_creates_workorder(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import risk_recognition
+
+    monkeypatch.setattr(
+        risk_recognition,
+        "_run_audio_guard_script",
+        lambda _: {
+            "fraud_result": "诈骗",
+            "confidence": 0.91,
+            "high_risk_behaviors": ["诱导转账", "要求保密"],
+            "evidence": ["请转到指定账户", "不要告诉家人"],
+            "reason": "清楚听到转账和隔离话术。",
+            "suggestion": "触发强提醒",
+        },
+    )
+    headers = auth_headers(client, "elder_demo", "111")
+
+    response = client.post(
+        "/api/v1/risk-recognition/call-audio",
+        headers=headers,
+        data={
+            "elder_user_id": "u-elder-001",
+            "call_session_id": "call-fraud-demo",
+            "duration_seconds": "120",
+        },
+        files={"audio_file": ("fraud.webm", b"fake audio", "audio/webm")},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["risk_level"] == "high"
+    assert data["alert_id"] is not None
+    assert len(data["notification_ids"]) >= 2
+    assert data["workorder_id"] is not None
+
+
+def test_risk_recognition_call_audio_model_failure_downgrades_to_review(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import risk_recognition
+
+    monkeypatch.setattr(
+        risk_recognition,
+        "_run_audio_guard_script",
+        lambda _: risk_recognition._build_audio_fallback_result("测试模型输出异常"),
+    )
+    headers = auth_headers(client, "elder_demo", "111")
+
+    response = client.post(
+        "/api/v1/risk-recognition/call-audio",
+        headers=headers,
+        data={
+            "elder_user_id": "u-elder-001",
+            "call_session_id": "call-fallback-demo",
+            "duration_seconds": "100",
+        },
+        files={"audio_file": ("fallback.webm", b"fake audio", "audio/webm")},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["risk_level"] == "medium"
+    assert data["alert_id"] is not None
+    assert "模型分析失败" in data["reason_detail"]
+
+
 def test_elder_help_settings_and_family_reminder(client: TestClient) -> None:
     elder_headers = auth_headers(client, "elder_demo", "111")
     family_headers = auth_headers(client, "family_demo", "111")

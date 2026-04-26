@@ -31,6 +31,7 @@ import {
   searchChatUsersApi,
   sendCallSignalApi,
   sendChatMessageApi,
+  uploadCallAudioRecognitionApi,
 } from '#/api';
 
 const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
@@ -100,6 +101,12 @@ export const useChatStore = defineStore('chat', () => {
   let syncingActiveCall = false;
   let lastUnloadCleanupCallId = '';
   let endingCallId = '';
+  let callRecorder: MediaRecorder | null = null;
+  let callRecorderStartedAt = 0;
+  let callRecordChunks: Blob[] = [];
+  let callRecordAudioContext: AudioContext | null = null;
+  let callRecordStream: MediaStream | null = null;
+  let callRecordingNote = '';
 
   const rtcConfig = computed(() => {
     const stunServers = (
@@ -150,6 +157,10 @@ export const useChatStore = defineStore('chat', () => {
 
   function getCurrentUserId() {
     return userStore.userInfo?.userId || decodeJwtPayload(accessStore.accessToken)?.sub || '';
+  }
+
+  function isCurrentUserElder() {
+    return userStore.userInfo?.roles?.includes('elder') ?? false;
   }
 
   function isCurrentUserParticipant(call: CallSessionItem) {
@@ -246,6 +257,144 @@ export const useChatStore = defineStore('chat', () => {
     callSeconds.value = 0;
   }
 
+  function getRecorderMimeType() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+    ];
+    return candidates.find((item) => MediaRecorder.isTypeSupported(item)) || '';
+  }
+
+  function cleanupCallRecorderResources() {
+    callRecordAudioContext?.close().catch(() => {});
+    callRecordAudioContext = null;
+    callRecordStream?.getTracks().forEach((track) => track.stop());
+    callRecordStream = null;
+  }
+
+  function startCallRecording() {
+    if (callRecorder || !isCurrentUserElder()) return;
+    if (!window.MediaRecorder || !localStream.value) return;
+
+    try {
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioContextCtor() as AudioContext;
+      const destination = audioContext.createMediaStreamDestination();
+      let mixedTracks = 0;
+
+      if (localStream.value.getAudioTracks().length > 0) {
+        audioContext.createMediaStreamSource(localStream.value).connect(destination);
+        mixedTracks += 1;
+      }
+
+      if (remoteStream.value?.getAudioTracks().length) {
+        audioContext.createMediaStreamSource(remoteStream.value).connect(destination);
+        mixedTracks += 1;
+      } else {
+        callRecordingNote = '远端音轨尚未就绪，本次录音仅包含本地音频。';
+      }
+
+      if (mixedTracks === 0) {
+        void audioContext.close();
+        return;
+      }
+
+      const mimeType = getRecorderMimeType();
+      callRecordAudioContext = audioContext;
+      callRecordStream = destination.stream;
+      callRecordChunks = [];
+      callRecorder = new MediaRecorder(
+        destination.stream,
+        mimeType ? { mimeType } : undefined,
+      );
+      callRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          callRecordChunks.push(event.data);
+        }
+      };
+      callRecorderStartedAt = Date.now();
+      callRecorder.start(1000);
+    } catch {
+      callRecorder = null;
+      callRecordChunks = [];
+      cleanupCallRecorderResources();
+    }
+  }
+
+  function stopCallRecording() {
+    return new Promise<Blob | null>((resolve) => {
+      const recorder = callRecorder;
+      if (!recorder) {
+        cleanupCallRecorderResources();
+        resolve(null);
+        return;
+      }
+      const mimeType = recorder.mimeType || 'audio/webm';
+      const finish = () => {
+        const blob = callRecordChunks.length > 0
+          ? new Blob(callRecordChunks, { type: mimeType })
+          : null;
+        callRecorder = null;
+        callRecorderStartedAt = 0;
+        callRecordChunks = [];
+        cleanupCallRecorderResources();
+        resolve(blob);
+      };
+      recorder.onstop = finish;
+      if (recorder.state === 'inactive') {
+        finish();
+      } else {
+        recorder.stop();
+      }
+    });
+  }
+
+  async function uploadCallRecording(
+    blob: Blob | null,
+    call: CallSessionItem | null,
+    durationSeconds: number,
+  ) {
+    if (!blob || !call || !isCurrentUserElder()) {
+      callRecordingNote = '';
+      return;
+    }
+    if (durationSeconds < 60) {
+      message.info('短通话未上传分析，已按隐私策略丢弃录音。');
+      callRecordingNote = '';
+      return;
+    }
+    try {
+      const result = await uploadCallAudioRecognitionApi({
+        audioFile: blob,
+        callSessionId: call.id,
+        durationSeconds,
+        elderUserId: getCurrentUserId(),
+        filename: `call-${call.id}.webm`,
+      });
+      if (result.risk_level === 'high') {
+        message.error('通话录音已分析：高风险，已通知守护人。');
+      } else if (result.risk_level === 'medium') {
+        message.warning('通话录音已分析：疑似风险，已生成提醒。');
+      } else {
+        message.success('通话录音已分析：暂未发现明显风险。');
+      }
+      if (callRecordingNote) {
+        message.info(callRecordingNote);
+      }
+    } catch {
+      message.warning('录音分析失败，通话已正常结束。');
+    } finally {
+      callRecordingNote = '';
+    }
+  }
+
+  function markCallConnected(answeredAt?: null | string) {
+    callPhase.value = 'connected';
+    startCallTimer(answeredAt);
+    startCallRecording();
+  }
+
   function upsertOnlineState(state: OnlineStateItem) {
     onlineStates.value = {
       ...onlineStates.value,
@@ -282,12 +431,15 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function resetActiveCallState() {
+    void stopCallRecording();
     clearMediaResources();
     resetCallTimer();
     activeCall.value = null;
     callPhase.value = 'idle';
     lastUnloadCleanupCallId = '';
     endingCallId = '';
+    callRecorderStartedAt = 0;
+    callRecordingNote = '';
   }
 
   function scheduleReconnect() {
@@ -345,8 +497,7 @@ export const useChatStore = defineStore('chat', () => {
     };
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
-        callPhase.value = 'connected';
-        startCallTimer(activeCall.value?.answered_at);
+        markCallConnected(activeCall.value?.answered_at);
       }
       if (['disconnected', 'failed'].includes(pc.connectionState)) {
         callPhase.value = 'reconnecting';
@@ -519,8 +670,7 @@ export const useChatStore = defineStore('chat', () => {
       type: answer.type,
       sdp: answer.sdp,
     });
-    callPhase.value = 'connected';
-    startCallTimer();
+    markCallConnected();
   }
 
   async function rejectIncomingCall(reason: 'busy' | 'rejected' = 'rejected') {
@@ -536,6 +686,13 @@ export const useChatStore = defineStore('chat', () => {
     options: { notifyServer?: boolean } = {},
   ) {
     const callId = activeCall.value?.id;
+    const callSnapshot = activeCall.value;
+    const durationSnapshot = Math.max(
+      callSeconds.value,
+      callRecorderStartedAt > 0
+        ? Math.floor((Date.now() - callRecorderStartedAt) / 1000)
+        : 0,
+    );
     if (callId && endingCallId === callId) {
       return;
     }
@@ -547,6 +704,7 @@ export const useChatStore = defineStore('chat', () => {
         } catch {}
       }
     }
+    const recordingBlob = await stopCallRecording();
     clearMediaResources();
     callPhase.value = 'ended';
     setTimeout(() => {
@@ -565,6 +723,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!callId) {
       endingCallId = '';
     }
+    void uploadCallRecording(recordingBlob, callSnapshot, durationSnapshot);
   }
 
   function flushActiveCallOnUnload(reason: 'ended' | 'failed' = 'failed') {
@@ -624,8 +783,7 @@ export const useChatStore = defineStore('chat', () => {
   function hydrateCallState(call: CallSessionItem) {
     activeCall.value = call;
     if (call.status === 'accepted') {
-      callPhase.value = 'connected';
-      startCallTimer(call.answered_at);
+      markCallConnected(call.answered_at);
     } else if (
       isCurrentUserReceiver(call) &&
       ['initiated', 'ringing'].includes(call.status)
@@ -665,8 +823,7 @@ export const useChatStore = defineStore('chat', () => {
           }),
         );
       }
-      callPhase.value = 'connected';
-      startCallTimer(nextPayload.answered_at);
+      markCallConnected(nextPayload.answered_at);
     }
     if (event === 'call.ice-candidate') {
       const candidatePayload = nextPayload.events
